@@ -1,0 +1,1 @@
+// State autentikasi pengguna.
