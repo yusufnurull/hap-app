@@ -5,7 +5,6 @@ import '../core/constants/order_status.dart';
 import '../models/menu_model.dart';
 import '../models/order_model.dart';
 import '../models/stand_model.dart';
-import '../models/user_model.dart';
 import '../providers/cart_provider.dart';
 
 class BuyerProfile {
@@ -471,58 +470,3 @@ const List<SellerOrderModel> mockSellerOrders = [
   ),
 ];
 
-const List<PendingSellerModel> mockPendingSellers = [
-  PendingSellerModel(
-    id: 'pend-1',
-    applicantName: 'Siti Aminah',
-    standName: 'Warung Mbak Siti',
-    appliedDate: '13 Nov 2026',
-    foodTypes: 'Nasi uduk, gorengan',
-  ),
-  PendingSellerModel(
-    id: 'pend-2',
-    applicantName: 'Budi Santoso',
-    standName: 'Bakso Pak Budi',
-    appliedDate: '12 Nov 2026',
-    foodTypes: 'Bakso urat, mie ayam',
-  ),
-];
-
-const List<UserModel> mockUsers = [
-  UserModel(
-    id: 'usr-1',
-    name: 'Yusuf',
-    email: 'yusuf@kampus.ac.id',
-    phone: '0812-3456-7890',
-    role: UserRole.pembeli,
-  ),
-  UserModel(
-    id: 'usr-2',
-    name: 'Nadia Kusuma',
-    email: 'nadia.k@kampus.ac.id',
-    phone: '0813-9988-1122',
-    role: UserRole.pembeli,
-    noShowCount: 3,
-  ),
-  UserModel(
-    id: 'usr-3',
-    name: 'Ibu Sri Wahyuni',
-    email: 'busri@kantin.ac.id',
-    phone: '0815-7700-4321',
-    role: UserRole.penjual,
-  ),
-  UserModel(
-    id: 'usr-4',
-    name: 'Mas Joko Susilo',
-    email: 'masjoko@kantin.ac.id',
-    phone: '0856-3311-2200',
-    role: UserRole.penjual,
-  ),
-  UserModel(
-    id: 'usr-5',
-    name: 'Rendra Pratama',
-    email: 'admin@kantin.ac.id',
-    phone: '0811-2233-4455',
-    role: UserRole.admin,
-  ),
-];

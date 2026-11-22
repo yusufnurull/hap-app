@@ -46,18 +46,6 @@ class CartSummary {
   final List<OrderLineItem> lines;
 }
 
-class CartAdjustment {
-  const CartAdjustment({
-    required this.cart,
-    required this.warnings,
-    required this.changed,
-  });
-
-  final CartState cart;
-  final List<String> warnings;
-  final bool changed;
-}
-
 int _sum(Iterable<int> values) => values.fold(0, (s, q) => s + q);
 
 bool canAddDirectlyToCart(CartState cart, String itemStandId) {
@@ -169,48 +157,5 @@ CartSummary getCartSummary(
     totalItems: totalItems,
     totalPrice: totalPrice,
     lines: lines,
-  );
-}
-
-/// Menyesuaikan keranjang dengan stok terbaru. Menu yang habis dibuang dan
-/// jumlah yang melebihi stok dipotong; hasilnya disertai pesan peringatan.
-CartAdjustment adjustCartToStock(CartState cart, List<MenuModel> menuItems) {
-  final itemMap = {for (final m in menuItems) m.id: m};
-  final nextItems = <String, int>{};
-  final nextNotes = <String, String>{};
-  final warnings = <String>[];
-  var changed = false;
-
-  cart.items.forEach((menuId, qty) {
-    if (qty <= 0) return;
-    final menu = itemMap[menuId];
-    if (menu == null || menu.isOutOfStock) {
-      changed = true;
-      warnings.add(
-        'Stok ${menu?.name ?? 'menu'} sudah habis. Menu dihapus dari keranjang.',
-      );
-      return;
-    }
-    if (qty > menu.stock) {
-      changed = true;
-      nextItems[menuId] = menu.stock;
-      warnings.add(
-        'Stok ${menu.name} tinggal ${menu.stock}. Jumlah pesananmu sudah disesuaikan.',
-      );
-    } else {
-      nextItems[menuId] = qty;
-    }
-    final note = cart.notes[menuId];
-    if (note != null && note.isNotEmpty) nextNotes[menuId] = note;
-  });
-
-  return CartAdjustment(
-    cart: CartState(
-      standId: _sum(nextItems.values) > 0 ? cart.standId : null,
-      items: nextItems,
-      notes: nextNotes,
-    ),
-    warnings: warnings,
-    changed: changed,
   );
 }

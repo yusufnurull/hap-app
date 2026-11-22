@@ -33,20 +33,3 @@ class UserModel {
     );
   }
 }
-
-/// Pendaftar penjual yang menunggu verifikasi admin.
-class PendingSellerModel {
-  const PendingSellerModel({
-    required this.id,
-    required this.applicantName,
-    required this.standName,
-    required this.appliedDate,
-    required this.foodTypes,
-  });
-
-  final String id;
-  final String applicantName;
-  final String standName;
-  final String appliedDate;
-  final String foodTypes;
-}

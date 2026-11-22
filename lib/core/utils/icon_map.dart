@@ -30,7 +30,7 @@ IconData iconFor(String name) {
     case 'coffee':
       return Icons.coffee_rounded;
     case 'skillet':
-      return Icons.restaurant_rounded;
+      return Icons.skillet_rounded;
     case 'bakery_dining':
       return Icons.bakery_dining_rounded;
     case 'soup_kitchen':
