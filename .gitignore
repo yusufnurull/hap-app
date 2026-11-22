@@ -53,3 +53,10 @@ lib/firebase_options.dart
 .env
 *.jks
 android/key.properties
+
+# Hasil build Android
+android/build/
+
+# Dokumentasi pribadi, tidak diunggah
+docs/screenshots/Prototype_Mockup/
+docs/screenshots/Screenshot Github/
