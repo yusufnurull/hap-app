@@ -1,10 +1,11 @@
 // Profil akun pembeli (tab Profil).
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
-import '../../data/mock_data.dart';
+import '../../providers/app_store.dart';
 import '../../widgets/common.dart';
 import '../role_home.dart';
 
@@ -13,6 +14,10 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = context.watch<AppStore>().currentUser;
+    final name = user?.name ?? 'Pengguna';
+    final email = user?.email ?? '-';
+    final phone = user?.phone ?? '-';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
       child: Column(
@@ -37,7 +42,7 @@ class ProfileScreen extends StatelessWidget {
                     shape: BoxShape.circle,
                   ),
                   child: Text(
-                    buyerProfile.name.substring(0, 1),
+                    name.isEmpty ? '?' : name.substring(0, 1),
                     style: hapText(18,
                         weight: FontWeight.w800, color: Colors.white),
                   ),
@@ -46,7 +51,7 @@ class ProfileScreen extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(buyerProfile.name,
+                    Text(name,
                         style: hapText(16, weight: FontWeight.w700)),
                     Text('Pembeli · Mahasiswa',
                         style: hapText(12,
@@ -57,9 +62,9 @@ class ProfileScreen extends StatelessWidget {
               ],
             ),
           ),
-          _info('Nama', buyerProfile.name),
-          _info('Email', buyerProfile.email),
-          _info('Nomor HP', buyerProfile.phone, tabular: true),
+          _info('Nama', name),
+          _info('Email', email),
+          _info('Nomor HP', phone, tabular: true),
           const Spacer(),
           OutlineAction(
             label: 'Keluar',

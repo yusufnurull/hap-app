@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import '../core/constants/app_enums.dart';
 import '../providers/app_store.dart';
 import '../providers/auth_provider.dart';
-import 'admin/admin_home_screen.dart';
 import 'auth/login_screen.dart';
 import 'pembeli/pembeli_home_screen.dart';
 import 'penjual/penjual_home_screen.dart';
@@ -14,7 +13,9 @@ import 'penjual/penjual_home_screen.dart';
 Widget homeForRole(UserRole role) {
   switch (role) {
     case UserRole.admin:
-      return const AdminHomeScreen();
+      return const Scaffold(
+        body: Center(child: Text('Panel admin dikerjakan Yusuf')),
+      );
     case UserRole.penjual:
       return const PenjualHomeScreen();
     case UserRole.pembeli:
@@ -32,6 +33,7 @@ void goToRoleHome(BuildContext context, UserRole role) {
 
 void logoutToLogin(BuildContext context) {
   context.read<AuthProvider>().logout();
+  context.read<AppStore>().logout();
   context.read<AppStore>().setBuyerTab(0);
   Navigator.of(context).pushAndRemoveUntil(
     MaterialPageRoute<void>(builder: (_) => const LoginScreen()),

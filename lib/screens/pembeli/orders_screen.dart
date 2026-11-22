@@ -40,7 +40,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<AppStore>();
-    final split = splitBuyerOrders(store.buyerOrders);
+    final split = splitBuyerOrders(store.myOrders);
     final visible = _tab == 0 ? split.active : split.history;
     final tabName = _tab == 0 ? 'aktif' : 'riwayat';
 

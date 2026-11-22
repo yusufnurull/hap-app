@@ -52,7 +52,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
     setState(() => _error = '');
 
-    context.read<AppStore>().registerUser(
+    final store = context.read<AppStore>();
+    if (store.emailTaken(_email.text)) {
+      setState(() => _error = 'Email ini sudah terdaftar. Silakan masuk.');
+      return;
+    }
+    store.registerUser(
+          password: _password.text,
           name: _name.text.trim(),
           email: _email.text.trim(),
           phone: _phone.text.trim(),

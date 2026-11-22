@@ -5,11 +5,13 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../providers/app_store.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common.dart';
 import '../../widgets/hap_logo.dart';
 import '../role_home.dart';
 import 'register_screen.dart';
+import 'waiting_verification_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -36,9 +38,26 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _error = 'Isi email dan password terlebih dahulu.');
       return;
     }
+    final store = context.read<AppStore>();
+    final error = store.login(_email.text, _password.text);
+    if (error != null) {
+      setState(() => _error = error);
+      return;
+    }
     setState(() => _error = '');
-    final role = context.read<AuthProvider>().login(_email.text.trim());
-    goToRoleHome(context, role);
+
+    final user = store.currentUser!;
+    context.read<AuthProvider>().setRole(user.role);
+    if (store.isCurrentSellerPending) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(
+          builder: (_) => const WaitingVerificationScreen(),
+        ),
+        (_) => false,
+      );
+    } else {
+      goToRoleHome(context, user.role);
+    }
   }
 
   @override

@@ -27,6 +27,8 @@ class AppStore extends ChangeNotifier {
   List<UserModel> _users = [...mockUsers];
   int _nextOrderNumber = 21;
   int _buyerTab = 0;
+  UserModel? _currentUser;
+  final Map<String, String> _passwords = {};
 
   List<StandModel> get stands => _stands;
   List<MenuModel> get menus => _menus;
@@ -45,7 +47,52 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  String get buyerName => buyerProfile.name;
+  UserModel? get currentUser => _currentUser;
+
+  /// Nama pembeli yang sedang login (dipakai di pesanan dan sapaan).
+  String get buyerName => _currentUser?.name ?? buyerProfile.name;
+
+  /// Pesanan milik pembeli yang sedang login.
+  List<OrderModel> get myOrders =>
+      _buyerOrders.where((o) => o.buyerName == buyerName).toList();
+
+  UserModel? _findByEmail(String email) {
+    final e = email.trim().toLowerCase();
+    for (final u in _users) {
+      if (u.email.toLowerCase() == e) return u;
+    }
+    return null;
+  }
+
+  bool emailTaken(String email) => _findByEmail(email) != null;
+
+  /// Penjual yang baru daftar dan belum disetujui admin.
+  bool get isCurrentSellerPending =>
+      _currentUser != null &&
+      _currentUser!.role == UserRole.penjual &&
+      _pendingSellers.any((p) => p.applicantName == _currentUser!.name);
+
+  /// Mengembalikan pesan galat, atau null bila berhasil.
+  /// Akun contoh (tanpa password tersimpan) menerima password apa saja.
+  String? login(String email, String password) {
+    final user = _findByEmail(email);
+    if (user == null) {
+      return 'Akun tidak ditemukan. Cek emailnya atau daftar dulu.';
+    }
+    if (!user.isActive) return 'Akun ini dinonaktifkan admin.';
+    final saved = _passwords[user.email.toLowerCase()];
+    if (saved != null && saved != password) return 'Password salah.';
+    _currentUser = user;
+    _cart = user.email == buyerProfile.email ? initialCart : CartState.empty;
+    _checkoutWarnings = [];
+    notifyListeners();
+    return null;
+  }
+
+  void logout() {
+    _currentUser = null;
+    notifyListeners();
+  }
 
   /// Prototipe: penjual yang login memegang stand pertama.
   StandModel get sellerStand => _stands.first;
@@ -439,24 +486,26 @@ class AppStore extends ChangeNotifier {
   // Pendaftaran & admin
   // ---------------------------------------------------------------------------
 
-  void registerUser({
+  UserModel registerUser({
     required String name,
     required String email,
     required String phone,
+    required String password,
     required UserRole role,
     String? standName,
   }) {
     final stamp = DateTime.now().millisecondsSinceEpoch;
-    _users = [
-      UserModel(
-        id: 'usr-$stamp',
-        name: name,
-        email: email,
-        phone: phone,
-        role: role,
-      ),
-      ..._users,
-    ];
+    final user = UserModel(
+      id: 'usr-$stamp',
+      name: name,
+      email: email,
+      phone: phone,
+      role: role,
+    );
+    _users = [user, ..._users];
+    _passwords[email.toLowerCase()] = password;
+    _currentUser = user;
+    _cart = CartState.empty;
     if (role == UserRole.penjual) {
       _pendingSellers = [
         PendingSellerModel(
@@ -470,6 +519,7 @@ class AppStore extends ChangeNotifier {
       ];
     }
     notifyListeners();
+    return user;
   }
 
   void approveSeller(String pendingId) {
