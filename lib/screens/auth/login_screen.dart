@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common.dart';
+import '../../widgets/hap_logo.dart';
 import '../role_home.dart';
 import 'register_screen.dart';
 
@@ -49,11 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Hap!',
-                  style: hapText(22,
-                      weight: FontWeight.w800,
-                      color: AppColors.primary,
-                      letterSpacing: -0.5)),
+              const HapLogo(height: 64),
               const SizedBox(height: 20),
               Text('Masuk ke akunmu',
                   style: hapText(24, weight: FontWeight.w800, height: 1.2)),

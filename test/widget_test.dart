@@ -3,10 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hap/main.dart';
 
 void main() {
-  testWidgets('Hap! branding is displayed', (WidgetTester tester) async {
+  testWidgets('Splash Hap! tampil dengan tombol Mulai',
+      (WidgetTester tester) async {
     await tester.pumpWidget(const HapApp());
 
-    expect(find.text('Hap!'), findsOneWidget);
+    expect(find.text('Pesan, ambil, hap!'), findsOneWidget);
     expect(find.text('Mulai'), findsOneWidget);
   });
 }

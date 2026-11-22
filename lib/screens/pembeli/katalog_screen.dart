@@ -12,6 +12,7 @@ import '../../models/stand_model.dart';
 import '../../providers/app_store.dart';
 import '../../widgets/cart_bar.dart';
 import '../../widgets/common.dart';
+import '../../widgets/hap_logo.dart';
 import '../../widgets/menu_card.dart';
 import '../../widgets/stand_card.dart';
 import '../../widgets/switch_stand_dialog.dart';
@@ -75,12 +76,7 @@ class _KatalogScreenState extends State<KatalogScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Hap!',
-                        style: hapText(22,
-                            weight: FontWeight.w800,
-                            color: AppColors.primary,
-                            letterSpacing: -0.5,
-                            height: 1)),
+                    const HapLogo(height: 36),
                     Text('Kantin Pusat Kampus',
                         style: hapText(12,
                             weight: FontWeight.w500,
