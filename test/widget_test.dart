@@ -7,5 +7,6 @@ void main() {
     await tester.pumpWidget(const HapApp());
 
     expect(find.text('Hap!'), findsOneWidget);
+    expect(find.text('Mulai'), findsOneWidget);
   });
 }

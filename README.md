@@ -73,3 +73,7 @@ Screenshot aplikasi akan ditambahkan seiring pengembangan dan disimpan di folder
 | Athaya Alifia Zahra | K3524046 | Frontend Developer |
 | Muhammad Rafli Rafsanjani | K3524030 | Backend dan Database Developer |
 | Herlina Dwi Septiana | K3524012 | Feature Developer, Testing, dan Dokumentasi |
+
+## Status Port dari Prototipe
+
+Seluruh layar prototipe React (Hap!) sudah dipindah ke Dart. Data masih berupa `lib/data/mock_data.dart`; `lib/services/*` (Firebase, Cloudinary) belum diisi.
