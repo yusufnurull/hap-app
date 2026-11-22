@@ -1,8 +1,9 @@
-// Penyimpanan state utama aplikasi (stand, menu, keranjang, pesanan, pengguna).
+// State sementara (di memori) supaya layar bisa dijalankan dan dipindah-pindah.
 //
-// Padanan handler di App.tsx pada prototipe. Semua perubahan lewat method di
-// sini lalu notifyListeners(), sehingga pembeli, penjual, dan admin selalu
-// melihat data yang sama.
+// Ini kerangka, bukan logika final. Titik sambung untuk tim:
+// - Rafli  : login/daftar, CRUD menu & stok, status pesanan -> Firestore
+// - Herlina: validasi stok & keranjang saat checkout (lihat checkoutWarnings)
+// Tiap method cukup diganti isinya; layar tidak perlu diubah.
 
 import 'package:flutter/foundation.dart';
 
@@ -14,32 +15,31 @@ import '../models/menu_model.dart';
 import '../models/order_model.dart';
 import '../models/stand_model.dart';
 import '../models/user_model.dart';
+import 'auth_provider.dart';
 import 'cart_provider.dart';
 
 class AppStore extends ChangeNotifier {
   List<StandModel> _stands = [...mockStands];
   List<MenuModel> _menus = [...mockMenus];
   CartState _cart = initialCart;
-  List<String> _checkoutWarnings = [];
   List<OrderModel> _buyerOrders = [...mockBuyerOrders];
   List<SellerOrderModel> _sellerOrders = [...mockSellerOrders];
-  List<PendingSellerModel> _pendingSellers = [...mockPendingSellers];
-  List<UserModel> _users = [...mockUsers];
+  UserModel? _currentUser;
+  bool _sellerPending = false;
   int _nextOrderNumber = 21;
   int _buyerTab = 0;
-  UserModel? _currentUser;
-  final Map<String, String> _passwords = {};
 
   List<StandModel> get stands => _stands;
   List<MenuModel> get menus => _menus;
   CartState get cart => _cart;
-  List<String> get checkoutWarnings => _checkoutWarnings;
   List<OrderModel> get buyerOrders => _buyerOrders;
   List<SellerOrderModel> get sellerOrders => _sellerOrders;
-  List<PendingSellerModel> get pendingSellers => _pendingSellers;
-  List<UserModel> get users => _users;
+  UserModel? get currentUser => _currentUser;
 
-  /// Tab aktif pada beranda pembeli (0 Beranda, 1 Pesanan, 2 Profil).
+  /// Titik sambung (Herlina): isi dengan peringatan stok saat checkout.
+  List<String> get checkoutWarnings => const [];
+  void refreshCartForCheckout() {}
+
   int get buyerTab => _buyerTab;
   void setBuyerTab(int index) {
     if (_buyerTab == index) return;
@@ -47,62 +47,14 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  UserModel? get currentUser => _currentUser;
-
-  /// Nama pembeli yang sedang login (dipakai di pesanan dan sapaan).
   String get buyerName => _currentUser?.name ?? buyerProfile.name;
-
-  /// Pesanan milik pembeli yang sedang login.
   List<OrderModel> get myOrders =>
       _buyerOrders.where((o) => o.buyerName == buyerName).toList();
-
-  UserModel? _findByEmail(String email) {
-    final e = email.trim().toLowerCase();
-    for (final u in _users) {
-      if (u.email.toLowerCase() == e) return u;
-    }
-    return null;
-  }
-
-  bool emailTaken(String email) => _findByEmail(email) != null;
-
-  /// Penjual yang baru daftar dan belum disetujui admin.
-  bool get isCurrentSellerPending =>
-      _currentUser != null &&
-      _currentUser!.role == UserRole.penjual &&
-      _pendingSellers.any((p) => p.applicantName == _currentUser!.name);
-
-  /// Mengembalikan pesan galat, atau null bila berhasil.
-  /// Akun contoh (tanpa password tersimpan) menerima password apa saja.
-  String? login(String email, String password) {
-    final user = _findByEmail(email);
-    if (user == null) {
-      return 'Akun tidak ditemukan. Cek emailnya atau daftar dulu.';
-    }
-    if (!user.isActive) return 'Akun ini dinonaktifkan admin.';
-    final saved = _passwords[user.email.toLowerCase()];
-    if (saved != null && saved != password) return 'Password salah.';
-    _currentUser = user;
-    _cart = user.email == buyerProfile.email ? initialCart : CartState.empty;
-    _checkoutWarnings = [];
-    notifyListeners();
-    return null;
-  }
-
-  void logout() {
-    _currentUser = null;
-    notifyListeners();
-  }
 
   /// Prototipe: penjual yang login memegang stand pertama.
   StandModel get sellerStand => _stands.first;
 
   CartSummary get cartSummary => getCartSummary(_cart, _menus, _stands);
-
-  int get totalOrdersToday => _stands.fold(0, (s, st) => s + st.todayOrders);
-  int get completedOrdersToday =>
-      18 +
-      _sellerOrders.where((o) => o.status == SellerOrderStatus.selesai).length;
 
   StandModel? standById(String id) {
     for (final s in _stands) {
@@ -126,10 +78,65 @@ class AppStore extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Keranjang
+  // Akun (sementara: peran ditebak dari email, tanpa cek password)
   // ---------------------------------------------------------------------------
 
-  /// Apakah [item] boleh langsung masuk keranjang (stand sama / keranjang kosong).
+  bool get isCurrentSellerPending =>
+      _sellerPending && _currentUser?.role == UserRole.penjual;
+
+  /// Mengembalikan pesan galat, atau null bila berhasil.
+  String? login(String email, String password) {
+    final e = email.trim();
+    final role = AuthProvider.roleForEmail(e);
+    final local = e.split('@').first;
+    final name = local.isEmpty
+        ? 'Pengguna'
+        : local[0].toUpperCase() + local.substring(1);
+    _currentUser = UserModel(
+      id: 'usr-demo',
+      name: name,
+      email: e,
+      phone: buyerProfile.phone,
+      role: role,
+    );
+    _sellerPending = false;
+    _cart = e == buyerProfile.email ? initialCart : CartState.empty;
+    notifyListeners();
+    return null;
+  }
+
+  UserModel registerUser({
+    required String name,
+    required String email,
+    required String phone,
+    required String password, // dipakai saat Firebase Auth terpasang
+    required UserRole role,
+    String? standName,
+  }) {
+    final user = UserModel(
+      id: 'usr-${DateTime.now().millisecondsSinceEpoch}',
+      name: name,
+      email: email,
+      phone: phone,
+      role: role,
+    );
+    _currentUser = user;
+    _sellerPending = role == UserRole.penjual;
+    _cart = CartState.empty;
+    notifyListeners();
+    return user;
+  }
+
+  void logout() {
+    _currentUser = null;
+    _sellerPending = false;
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Keranjang & pesanan pembeli
+  // ---------------------------------------------------------------------------
+
   bool canAddDirectly(MenuModel item) =>
       canAddDirectlyToCart(_cart, item.standId);
 
@@ -138,7 +145,6 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Mengosongkan keranjang lama lalu mengisinya dengan [item] (ganti stand).
   void replaceCart(MenuModel item, {int qty = 1, String? note}) {
     _cart = replaceCartWithItem(item, qtyToAdd: qty, note: note);
     notifyListeners();
@@ -151,51 +157,21 @@ class AppStore extends ChangeNotifier {
 
   void updateCartNote(String itemId, String note) {
     _cart = updateCartItemNote(_cart, itemId, note);
-    // Tidak perlu notifyListeners: teks diketik di field yang punya controller
-    // sendiri, dan ringkasan keranjang tidak menampilkan catatan.
   }
 
   void clearCart() {
     _cart = CartState.empty;
-    _checkoutWarnings = [];
     notifyListeners();
   }
 
-  /// Dipanggil saat membuka checkout: sesuaikan keranjang dengan stok terbaru.
-  void refreshCartForCheckout() {
-    final adjusted = adjustCartToStock(_cart, _menus);
-    if (adjusted.changed) {
-      _cart = adjusted.cart;
-      _checkoutWarnings = adjusted.warnings;
-      notifyListeners();
-    }
-  }
-
-  void _syncCartWith(List<MenuModel> nextMenus) {
-    final adjusted = adjustCartToStock(_cart, nextMenus);
-    if (adjusted.changed) {
-      _cart = adjusted.cart;
-      _checkoutWarnings = adjusted.warnings;
-    }
-  }
-
-  /// Membuat pesanan dari keranjang. Mengembalikan null bila keranjang kosong
-  /// atau stok berubah (peringatan tampil di checkout).
+  /// Titik sambung (Rafli/Herlina): transaksi checkout sebenarnya.
   OrderModel? placeOrder(String pickupTime) {
-    final adjusted = adjustCartToStock(_cart, _menus);
-    if (adjusted.changed) {
-      _cart = adjusted.cart;
-      _checkoutWarnings = adjusted.warnings;
-      notifyListeners();
-      return null;
-    }
-
     final summary = cartSummary;
     final standId = summary.standId;
     if (summary.totalItems == 0 || standId == null) return null;
 
     final orderCode = 'A-0$_nextOrderNumber';
-    final buyerOrder = createOrderFromCart(
+    final order = createOrderFromCart(
       orderCode: orderCode,
       buyerName: buyerName,
       standId: standId,
@@ -205,82 +181,69 @@ class AppStore extends ChangeNotifier {
       note: '',
       nowTime: '11.55',
     );
-    final sellerOrder = SellerOrderModel(
-      id: 'sel-0$_nextOrderNumber',
-      orderCode: orderCode,
-      buyerName: buyerName,
-      pickupTime: pickupTime,
-      createdAt: '11.55',
-      status: SellerOrderStatus.baru,
-      items: buyerOrder.items,
-    );
-
+    _sellerOrders = [
+      SellerOrderModel(
+        id: 'sel-0$_nextOrderNumber',
+        orderCode: orderCode,
+        buyerName: buyerName,
+        pickupTime: pickupTime,
+        createdAt: '11.55',
+        status: SellerOrderStatus.baru,
+        items: order.items,
+      ),
+      ..._sellerOrders,
+    ];
+    _buyerOrders = [order, ..._buyerOrders];
     _nextOrderNumber++;
-    _menus = applyStockDelta(_menus, summary.lines, deduct: true);
-    _buyerOrders = [buyerOrder, ..._buyerOrders];
-    _sellerOrders = [sellerOrder, ..._sellerOrders];
-    _stands = _stands
-        .map((s) =>
-            s.id == standId ? s.copyWith(todayOrders: s.todayOrders + 1) : s)
-        .toList();
     _cart = CartState.empty;
-    _checkoutWarnings = [];
     notifyListeners();
-    return buyerOrder;
+    return order;
   }
 
-  // ---------------------------------------------------------------------------
-  // Pesanan (pembeli)
-  // ---------------------------------------------------------------------------
-
-  void _syncBuyerOrderStatus(
-    String orderCode,
-    OrderStatus next,
-    String timeStamp, {
-    String? cancelReason,
-  }) {
-    _buyerOrders = _buyerOrders.map((order) {
-      if (order.orderCode != orderCode) return order;
-      return order.copyWith(
+  void _setBuyerStatus(String orderCode, OrderStatus next, String time,
+      {String? reason}) {
+    _buyerOrders = _buyerOrders.map((o) {
+      if (o.orderCode != orderCode) return o;
+      return o.copyWith(
         status: next,
-        cancelReason: cancelReason,
-        timeline: order.timeline
-            .map((step) => step.status == next && step.time == null
-                ? step.withTime(timeStamp)
-                : step)
+        cancelReason: reason,
+        timeline: o.timeline
+            .map((s) => s.status == next && s.time == null ? s.withTime(time) : s)
             .toList(),
       );
     }).toList();
   }
 
-  /// Pembeli hanya boleh membatalkan pesanan yang masih "Menunggu".
-  void cancelBuyerOrder(String orderId, {String? reason}) {
-    final target = buyerOrderById(orderId);
-    if (target == null || target.status != OrderStatus.menunggu) return;
-
-    _syncBuyerOrderStatus(
-      target.orderCode,
-      OrderStatus.dibatalkan,
-      '11.56',
-      cancelReason: reason,
-    );
+  void _setSellerStatus(String id, SellerOrderStatus next, {String? reason}) {
     _sellerOrders = _sellerOrders
-        .map((so) => so.orderCode == target.orderCode
-            ? so.copyWith(
-                status: SellerOrderStatus.dibatalkan,
-                cancelReason: reason,
-              )
-            : so)
+        .map((o) =>
+            o.id == id ? o.copyWith(status: next, cancelReason: reason) : o)
         .toList();
-    _menus = applyStockDelta(_menus, target.items, deduct: false);
+  }
+
+  SellerOrderModel? _sellerOrder(String id) {
+    for (final o in _sellerOrders) {
+      if (o.id == id) return o;
+    }
+    return null;
+  }
+
+  void cancelBuyerOrder(String orderId, {String? reason}) {
+    final t = buyerOrderById(orderId);
+    if (t == null || t.status != OrderStatus.menunggu) return;
+    _setBuyerStatus(t.orderCode, OrderStatus.dibatalkan, '11.56', reason: reason);
+    for (final so in _sellerOrders) {
+      if (so.orderCode == t.orderCode) {
+        _setSellerStatus(so.id, SellerOrderStatus.dibatalkan, reason: reason);
+      }
+    }
     notifyListeners();
   }
 
-  /// Demo: pembeli mengonfirmasi pesanan sudah diambil.
   void confirmPickedUp(String orderId) {
-    final target = buyerOrderById(orderId);
-    if (target == null) return;
-    _syncBuyerOrderStatus(target.orderCode, OrderStatus.selesai, '12.16');
+    final t = buyerOrderById(orderId);
+    if (t == null) return;
+    _setBuyerStatus(t.orderCode, OrderStatus.selesai, '12.16');
     notifyListeners();
   }
 
@@ -292,83 +255,30 @@ class AppStore extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Pesanan (penjual)
+  // Pesanan masuk (penjual)
   // ---------------------------------------------------------------------------
 
-  SellerOrderModel? _sellerOrderById(String id) {
-    for (final o in _sellerOrders) {
-      if (o.id == id) return o;
-    }
-    return null;
-  }
+  void acceptSellerOrder(String id) =>
+      _sellerStep(id, SellerOrderStatus.diproses, OrderStatus.diproses, '11.56');
 
-  void acceptSellerOrder(String orderId) {
-    final target = _sellerOrderById(orderId);
-    _sellerOrders =
-        transitionSellerOrder(_sellerOrders, orderId, SellerOrderStatus.diproses);
-    if (target != null) {
-      _syncBuyerOrderStatus(target.orderCode, OrderStatus.diproses, '11.56');
-    }
-    notifyListeners();
-  }
+  void markReadySellerOrder(String id) =>
+      _sellerStep(id, SellerOrderStatus.siap, OrderStatus.siapDiambil, '12.02');
 
-  void rejectSellerOrder(String orderId, {String? reason}) {
-    final target = _sellerOrderById(orderId);
-    _sellerOrders = transitionSellerOrder(
-      _sellerOrders,
-      orderId,
-      SellerOrderStatus.dibatalkan,
-      cancelReason: reason,
-    );
-    if (target != null) {
-      _syncBuyerOrderStatus(
-        target.orderCode,
-        OrderStatus.dibatalkan,
-        '11.56',
-        cancelReason: reason,
-      );
-      _menus = applyStockDelta(_menus, target.items, deduct: false);
-    }
-    notifyListeners();
-  }
+  void completeSellerOrder(String id) =>
+      _sellerStep(id, SellerOrderStatus.selesai, OrderStatus.selesai, '12.16');
 
-  void markReadySellerOrder(String orderId) {
-    final target = _sellerOrderById(orderId);
-    _sellerOrders =
-        transitionSellerOrder(_sellerOrders, orderId, SellerOrderStatus.siap);
-    if (target != null) {
-      _syncBuyerOrderStatus(target.orderCode, OrderStatus.siapDiambil, '12.02');
-    }
-    notifyListeners();
-  }
+  void markNoShowSellerOrder(String id) => _sellerStep(
+      id, SellerOrderStatus.tidakDiambil, OrderStatus.tidakDiambil, '12.25');
 
-  void completeSellerOrder(String orderId) {
-    final target = _sellerOrderById(orderId);
-    _sellerOrders =
-        transitionSellerOrder(_sellerOrders, orderId, SellerOrderStatus.selesai);
-    if (target != null) {
-      _syncBuyerOrderStatus(target.orderCode, OrderStatus.selesai, '12.16');
-    }
-    notifyListeners();
-  }
+  void rejectSellerOrder(String id, {String? reason}) => _sellerStep(
+      id, SellerOrderStatus.dibatalkan, OrderStatus.dibatalkan, '11.56',
+      reason: reason);
 
-  /// Pembeli tidak datang. Stok sengaja TIDAK dikembalikan (makanan sudah dibuat).
-  void markNoShowSellerOrder(String orderId) {
-    final target = _sellerOrderById(orderId);
-    _sellerOrders = transitionSellerOrder(
-      _sellerOrders,
-      orderId,
-      SellerOrderStatus.tidakDiambil,
-    );
-    if (target != null) {
-      _syncBuyerOrderStatus(target.orderCode, OrderStatus.tidakDiambil, '12.25');
-      _users = _users
-          .map((u) => u.role == UserRole.pembeli &&
-                  u.name.toLowerCase() == target.buyerName.toLowerCase()
-              ? u.copyWith(noShowCount: u.noShowCount + 1)
-              : u)
-          .toList();
-    }
+  void _sellerStep(String id, SellerOrderStatus next, OrderStatus buyerNext,
+      String time, {String? reason}) {
+    final t = _sellerOrder(id);
+    _setSellerStatus(id, next, reason: reason);
+    if (t != null) _setBuyerStatus(t.orderCode, buyerNext, time, reason: reason);
     notifyListeners();
   }
 
@@ -378,37 +288,31 @@ class AppStore extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Menu & stand (penjual)
+  // Menu & stand (penjual) -- titik sambung Rafli (CRUD menu & stok)
   // ---------------------------------------------------------------------------
 
+  void _mapMenu(String id, MenuModel Function(MenuModel) f) {
+    _menus = _menus.map((m) => m.id == id ? f(m) : m).toList();
+  }
+
   void toggleMenuAvailability(String menuId) {
-    final next = _menus.map((item) {
-      if (item.id != menuId) return item;
-      if (!item.isOutOfStock) return item.copyWith(isAvailable: false);
-      return item.copyWith(
-        isAvailable: true,
-        stock: item.stock == 0 ? 1 : item.stock,
-      );
-    }).toList();
-    _menus = next;
-    _syncCartWith(next);
+    _mapMenu(menuId, (m) => m.isOutOfStock
+        ? m.copyWith(isAvailable: true, stock: m.stock == 0 ? 1 : m.stock)
+        : m.copyWith(isAvailable: false));
     notifyListeners();
   }
 
   void adjustStock(String menuId, int nextStock) {
-    final next = setMenuStock(_menus, menuId, nextStock);
-    _menus = next;
-    _syncCartWith(next);
+    final s = nextStock < 0 ? 0 : nextStock;
+    _mapMenu(menuId, (m) => m.copyWith(stock: s, isAvailable: s > 0));
     notifyListeners();
   }
 
   void bulkUpdateStocks(Map<String, int> updates) {
-    var next = _menus;
-    updates.forEach((menuId, stock) {
-      next = setMenuStock(next, menuId, stock);
+    updates.forEach((id, stock) {
+      final s = stock < 0 ? 0 : stock;
+      _mapMenu(id, (m) => m.copyWith(stock: s, isAvailable: s > 0));
     });
-    _menus = next;
-    _syncCartWith(next);
     notifyListeners();
   }
 
@@ -422,21 +326,18 @@ class AppStore extends ChangeNotifier {
     required String icon,
   }) {
     if (id != null) {
-      final next = _menus
-          .map((item) => item.id == id
-              ? item.copyWith(
-                  name: name,
-                  price: price,
-                  stock: stock,
-                  isAvailable: stock > 0 ? item.isAvailable : false,
-                  category: category,
-                  description: description,
-                  icon: icon,
-                )
-              : item)
-          .toList();
-      _menus = next;
-      _syncCartWith(next);
+      _mapMenu(
+        id,
+        (m) => m.copyWith(
+          name: name,
+          price: price,
+          stock: stock,
+          isAvailable: stock > 0 ? m.isAvailable : false,
+          category: category,
+          description: description,
+          icon: icon,
+        ),
+      );
     } else {
       final stand = sellerStand;
       _menus = [
@@ -478,121 +379,6 @@ class AppStore extends ChangeNotifier {
         .toList();
     _menus = _menus
         .map((m) => m.standId == standId ? m.copyWith(standName: name) : m)
-        .toList();
-    notifyListeners();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Pendaftaran & admin
-  // ---------------------------------------------------------------------------
-
-  UserModel registerUser({
-    required String name,
-    required String email,
-    required String phone,
-    required String password,
-    required UserRole role,
-    String? standName,
-  }) {
-    final stamp = DateTime.now().millisecondsSinceEpoch;
-    final user = UserModel(
-      id: 'usr-$stamp',
-      name: name,
-      email: email,
-      phone: phone,
-      role: role,
-    );
-    _users = [user, ..._users];
-    _passwords[email.toLowerCase()] = password;
-    _currentUser = user;
-    _cart = CartState.empty;
-    if (role == UserRole.penjual) {
-      _pendingSellers = [
-        PendingSellerModel(
-          id: 'pend-$stamp',
-          applicantName: name,
-          standName: standName ?? 'Stand Baru',
-          appliedDate: '13 Nov 2026',
-          foodTypes: 'Menu kantin harian',
-        ),
-        ..._pendingSellers,
-      ];
-    }
-    notifyListeners();
-    return user;
-  }
-
-  void approveSeller(String pendingId) {
-    PendingSellerModel? target;
-    for (final p in _pendingSellers) {
-      if (p.id == pendingId) target = p;
-    }
-    _pendingSellers = _pendingSellers.where((p) => p.id != pendingId).toList();
-    if (target != null) {
-      _stands = [
-        ..._stands,
-        StandModel(
-          id: 'stand-${DateTime.now().millisecondsSinceEpoch}',
-          name: target.standName,
-          isOpen: true,
-          foodTypes: target.foodTypes,
-          openHours: '07.30–15.30',
-          locationNote: 'Kios ${_stands.length + 1}',
-          categories: const [StandCategory.makananBerat],
-          icon: 'storefront',
-        ),
-      ];
-    }
-    notifyListeners();
-  }
-
-  void rejectSeller(String pendingId) {
-    _pendingSellers = _pendingSellers.where((p) => p.id != pendingId).toList();
-    notifyListeners();
-  }
-
-  void adminSaveStand({
-    String? id,
-    required String name,
-    required String foodTypes,
-    required String openHours,
-    required String locationNote,
-    required bool isOpen,
-    required List<StandCategory> categories,
-  }) {
-    if (id != null) {
-      _stands = _stands
-          .map((s) => s.id == id
-              ? s.copyWith(
-                  name: name,
-                  foodTypes: foodTypes,
-                  openHours: openHours,
-                  locationNote: locationNote,
-                  isOpen: isOpen,
-                )
-              : s)
-          .toList();
-    } else {
-      _stands = [
-        ..._stands,
-        StandModel(
-          id: 'stand-${DateTime.now().millisecondsSinceEpoch}',
-          name: name,
-          isOpen: isOpen,
-          foodTypes: foodTypes,
-          openHours: openHours,
-          locationNote: locationNote,
-          categories: categories,
-          icon: 'storefront',
-        ),
-      ];
-    }
-    notifyListeners();
-  }
-
-  void toggleUserActive(String userId) {
-    _users = _users
-        .map((u) => u.id == userId ? u.copyWith(isActive: !u.isActive) : u)
         .toList();
     notifyListeners();
   }

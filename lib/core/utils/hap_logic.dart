@@ -5,7 +5,6 @@ import '../../core/constants/order_status.dart';
 import '../../models/menu_model.dart';
 import '../../models/order_model.dart';
 import '../../models/stand_model.dart';
-import '../../models/user_model.dart';
 
 /// Urutan stabil: elemen yang lolos [test] dulu, sisanya menyusul, urutan
 /// aslinya dipertahankan.
@@ -105,49 +104,6 @@ List<SellerOrderModel> sortOrdersByPickupTime(List<SellerOrderModel> orders) {
   return (baru: baru, diproses: diproses, siap: siap);
 }
 
-List<MenuModel> setMenuStock(
-  List<MenuModel> menuItems,
-  String menuId,
-  int nextStock,
-) {
-  final clamped = nextStock < 0 ? 0 : nextStock;
-  return menuItems.map((item) {
-    if (item.id != menuId) return item;
-    final isAvailable = clamped == 0
-        ? false
-        : (item.stock == 0 ? true : item.isAvailable);
-    return item.copyWith(stock: clamped, isAvailable: isAvailable);
-  }).toList();
-}
-
-/// Mengurangi ([deduct] = true) atau mengembalikan stok sesuai isi pesanan.
-List<MenuModel> applyStockDelta(
-  List<MenuModel> menuItems,
-  List<OrderLineItem> orderLines, {
-  required bool deduct,
-}) {
-  final delta = <String, int>{};
-  for (final line in orderLines) {
-    delta[line.menuId] = (delta[line.menuId] ?? 0) + line.quantity;
-  }
-  return menuItems.map((item) {
-    final qty = delta[item.id];
-    if (qty == null || qty == 0) return item;
-    if (deduct) {
-      final next = item.stock - qty < 0 ? 0 : item.stock - qty;
-      return item.copyWith(
-        stock: next,
-        isAvailable: next == 0 ? false : item.isAvailable,
-      );
-    }
-    final next = item.stock + qty;
-    return item.copyWith(
-      stock: next,
-      isAvailable: next > 0 ? true : item.isAvailable,
-    );
-  }).toList();
-}
-
 int? _parseTimeToMinutes(String time) {
   final match = RegExp(r'^(\d{1,2})[.:](\d{2})$').firstMatch(time.trim());
   if (match == null) return null;
@@ -167,19 +123,6 @@ bool isPickupOverdue(
   return now - pickup >= 30;
 }
 
-List<SellerOrderModel> transitionSellerOrder(
-  List<SellerOrderModel> orders,
-  String orderId,
-  SellerOrderStatus nextStatus, {
-  String? cancelReason,
-}) {
-  return orders
-      .map((o) => o.id == orderId
-          ? o.copyWith(status: nextStatus, cancelReason: cancelReason)
-          : o)
-      .toList();
-}
-
 int calculateOrderTotal(List<OrderLineItem> items) =>
     items.fold(0, (sum, i) => sum + i.subtotal);
 
@@ -191,9 +134,6 @@ int calculateOrderTotal(List<OrderLineItem> items) =>
     history: orders.where((o) => !o.status.isActive).toList(),
   );
 }
-
-List<UserModel> filterUsersByRole(List<UserModel> users, UserRole? role) =>
-    role == null ? users : users.where((u) => u.role == role).toList();
 
 OrderModel createOrderFromCart({
   required String orderCode,
