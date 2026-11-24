@@ -1,6 +1,9 @@
 // Model data item menu.
+//
+// Dokumen Firestore: stands/{standId}/menus/{menuId}
 
 import '../core/constants/app_enums.dart';
+import '../core/constants/firestore_values.dart';
 
 class MenuModel {
   const MenuModel({
@@ -14,12 +17,16 @@ class MenuModel {
     required this.icon,
     required this.stock,
     required this.isAvailable,
+    this.photoUrl = '',
   });
 
   final String id;
   final String name;
+
+  /// Diambil dari dokumen induk (stand), tidak disimpan di dokumen menu.
   final String standId;
   final String standName;
+
   final MenuCategory category;
   final int price;
   final String description;
@@ -27,8 +34,48 @@ class MenuModel {
   final int stock;
   final bool isAvailable;
 
+  /// URL foto dari Cloudinary. Kosong = tampilkan ikon.
+  final String photoUrl;
+
   /// Habis bila dimatikan penjual atau stok nol.
   bool get isOutOfStock => !isAvailable || stock <= 0;
+
+  bool get hasPhoto => photoUrl.isNotEmpty;
+
+  factory MenuModel.fromMap(
+    String id,
+    Map<String, dynamic> data, {
+    required String standId,
+    String standName = '',
+  }) {
+    return MenuModel(
+      id: id,
+      name: (data['nama'] as String?) ?? '',
+      standId: standId,
+      standName: standName,
+      category: menuCategoryFromValue(data['kategori']),
+      price: (data['harga'] as num?)?.toInt() ?? 0,
+      description: (data['deskripsi'] as String?) ?? '',
+      icon: (data['ikon'] as String?) ?? 'restaurant',
+      stock: (data['stok'] as num?)?.toInt() ?? 0,
+      isAvailable: (data['tersedia'] as bool?) ?? false,
+      photoUrl: (data['fotoUrl'] as String?) ?? '',
+    );
+  }
+
+  /// `updatedAt` diisi oleh service.
+  Map<String, dynamic> toMap() {
+    return {
+      'nama': name,
+      'harga': price,
+      'kategori': menuCategoryToValue(category),
+      'deskripsi': description,
+      'stok': stock,
+      'tersedia': isAvailable,
+      'fotoUrl': photoUrl,
+      'ikon': icon,
+    };
+  }
 
   MenuModel copyWith({
     String? name,
@@ -39,6 +86,7 @@ class MenuModel {
     String? icon,
     int? stock,
     bool? isAvailable,
+    String? photoUrl,
   }) {
     return MenuModel(
       id: id,
@@ -51,6 +99,7 @@ class MenuModel {
       icon: icon ?? this.icon,
       stock: stock ?? this.stock,
       isAvailable: isAvailable ?? this.isAvailable,
+      photoUrl: photoUrl ?? this.photoUrl,
     );
   }
 }
