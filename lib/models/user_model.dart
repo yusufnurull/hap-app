@@ -18,6 +18,7 @@ class UserModel {
     this.noShowCount = 0,
     this.status = AccountStatus.aktif,
     this.standId,
+    this.proposedStandName = '',
   });
 
   final String id; // = uid Firebase Auth
@@ -33,6 +34,10 @@ class UserModel {
 
   /// Hanya terisi untuk penjual.
   final String? standId;
+
+  /// Nama stand yang diisi penjual saat daftar (`namaStandUsulan`).
+  /// Dipakai admin saat menyetujui penjual.
+  final String proposedStandName;
 
   bool get isWaitingApproval => status == AccountStatus.menunggu;
 
@@ -51,6 +56,7 @@ class UserModel {
       isActive: status != AccountStatus.nonaktif,
       noShowCount: (data['jumlahTidakDiambil'] as num?)?.toInt() ?? 0,
       standId: data['standId'] as String?,
+      proposedStandName: (data['namaStandUsulan'] as String?) ?? '',
     );
   }
 
@@ -64,6 +70,7 @@ class UserModel {
       'status': status,
       'jumlahTidakDiambil': noShowCount,
       if (standId != null) 'standId': standId,
+      if (proposedStandName.isNotEmpty) 'namaStandUsulan': proposedStandName,
     };
   }
 
@@ -83,6 +90,7 @@ class UserModel {
       noShowCount: noShowCount ?? this.noShowCount,
       status: status ?? this.status,
       standId: standId ?? this.standId,
+      proposedStandName: proposedStandName,
     );
   }
 }

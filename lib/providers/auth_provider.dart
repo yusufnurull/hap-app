@@ -73,6 +73,7 @@ class AuthProvider extends ChangeNotifier {
     required String noHp,
     required String password,
     required UserRole role,
+    String namaStand = '',
   }) async {
     _mulaiMemantau();
     try {
@@ -82,6 +83,7 @@ class AuthProvider extends ChangeNotifier {
         noHp: noHp,
         password: password,
         role: role,
+        namaStand: namaStand,
       );
       return null;
     } on AuthFailure catch (e) {

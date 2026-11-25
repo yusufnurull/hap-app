@@ -1,0 +1,132 @@
+rules_version = '2';
+
+// Security Rules aplikasi Hap!
+// Penanggung jawab: Rafli (Backend & Database)
+//
+// Prinsip:
+// - Semua akses wajib login.
+// - Pembeli hanya melihat/mengubah pesanannya sendiri.
+// - Penjual hanya mengelola stand, menu, dan pesanan miliknya, dan hanya
+//   bila akunnya sudah aktif (disetujui admin).
+// - Admin aktif boleh mengelola pengguna dan stand.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------- helper
+    function signedIn() {
+      return request.auth != null;
+    }
+    function me() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function isActive() {
+      return signedIn() && me().status == 'aktif';
+    }
+    function isAdmin() {
+      return isActive() && me().role == 'admin';
+    }
+    function isBuyer() {
+      return isActive() && me().role == 'pembeli';
+    }
+    function ownsStand(standId) {
+      return isActive() && me().role == 'penjual' && me().standId == standId;
+    }
+    function changedOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // ----------------------------------------------------------------- users
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+
+      // Daftar: pembeli langsung aktif, penjual menunggu persetujuan.
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.jumlahTidakDiambil == 0
+        && !('standId' in request.resource.data)
+        && ((request.resource.data.role == 'pembeli'
+              && request.resource.data.status == 'aktif')
+          || (request.resource.data.role == 'penjual'
+              && request.resource.data.status == 'menunggu'));
+
+      allow update: if
+        // pemilik akun hanya boleh mengubah nama dan nomor HP
+        (signedIn() && request.auth.uid == uid && changedOnly(['nama', 'noHp']))
+        // penjual menandai pesanan tidak diambil: +1, tidak lebih
+        || (isActive() && me().role == 'penjual'
+            && changedOnly(['jumlahTidakDiambil'])
+            && request.resource.data.jumlahTidakDiambil
+               == resource.data.get('jumlahTidakDiambil', 0) + 1)
+        || isAdmin();
+
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------- stands
+    match /stands/{standId} {
+      allow read: if signedIn();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (ownsStand(standId)
+            && changedOnly(['isOpen', 'namaStand', 'deskripsi', 'jamBuka', 'jamTutup']));
+
+      // ----------------------------------------------------------- menus
+      match /menus/{menuId} {
+        allow read: if signedIn();
+        allow create, delete: if ownsStand(standId) || isAdmin();
+        allow update: if ownsStand(standId) || isAdmin()
+          // pembeli mengubah stok lewat transaction checkout/pembatalan
+          || (isBuyer()
+              && changedOnly(['stok', 'tersedia', 'updatedAt'])
+              && request.resource.data.stok >= 0);
+      }
+    }
+
+    // Pencarian semua menu (collectionGroup) di beranda pembeli.
+    match /{path=**}/menus/{menuId} {
+      allow read: if signedIn();
+    }
+
+    // ---------------------------------------------------------------- orders
+    match /orders/{orderId} {
+      allow read: if signedIn() && (
+        resource.data.pembeliId == request.auth.uid
+        || ownsStand(resource.data.standId)
+        || isAdmin());
+
+      allow create: if isBuyer()
+        && request.resource.data.pembeliId == request.auth.uid
+        && request.resource.data.status == 'menunggu'
+        && request.resource.data.metodeBayar == 'tunai'
+        && request.resource.data.items.size() > 0;
+
+      allow update: if
+        // pembeli membatalkan selama masih menunggu
+        (resource.data.pembeliId == request.auth.uid
+          && resource.data.status == 'menunggu'
+          && request.resource.data.status == 'dibatalkan'
+          && changedOnly(['status', 'waktuStatus', 'alasanBatal']))
+        // pembeli memberi rating satu kali setelah selesai
+        || (resource.data.pembeliId == request.auth.uid
+          && resource.data.status == 'selesai'
+          && resource.data.get('sudahDirating', false) == false
+          && changedOnly(['rating', 'ulasan', 'sudahDirating'])
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5)
+        // penjual mengubah status pesanan di standnya
+        || (ownsStand(resource.data.standId)
+          && changedOnly(['status', 'waktuStatus', 'alasanBatal'])
+          && request.resource.data.status in
+             ['diproses', 'siap', 'selesai', 'dibatalkan', 'tidakDiambil'])
+        || isAdmin();
+
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------- counters
+    // Nomor pesanan harian, dinaikkan di transaction checkout.
+    match /counters/{tanggal} {
+      allow read, write: if isActive();
+    }
+  }
+}

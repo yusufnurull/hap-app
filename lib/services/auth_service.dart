@@ -52,11 +52,15 @@ class AuthService {
     required String noHp,
     required String password,
     required UserRole role,
+    String namaStand = '',
   }) async {
     if (role == UserRole.admin) {
       throw const AuthFailure(
         'Akun admin tidak bisa didaftarkan dari aplikasi.',
       );
+    }
+    if (role == UserRole.penjual && namaStand.trim().isEmpty) {
+      throw const AuthFailure('Nama stand wajib diisi untuk penjual.');
     }
 
     final UserCredential credential;
@@ -79,6 +83,7 @@ class AuthService {
       status: role == UserRole.penjual
           ? AccountStatus.menunggu
           : AccountStatus.aktif,
+      proposedStandName: role == UserRole.penjual ? namaStand.trim() : '',
     );
 
     try {

@@ -1,7 +1,7 @@
 # Struktur Database Firestore — Hap!
 
 Penanggung jawab: Rafli (Backend & Database)
-Status: final Minggu 1 (boleh disesuaikan lagi selama tim diberi tahu)
+Status: diperbarui Minggu 3 (pesanan, admin, Security Rules)
 
 Dokumen ini menyesuaikan rancangan di _Hap! — Rancangan Dasar Aplikasi_ dengan model
 yang sudah ada di `lib/models/`, supaya layar buatan Aya tidak perlu banyak diubah
@@ -23,16 +23,17 @@ Nama koleksi ada di `lib/core/constants/firestore_collections.dart`.
 
 ID dokumen = `uid` dari Firebase Auth.
 
-| Field              | Tipe      | Keterangan                        | Model (`UserModel`)              |
-| ------------------ | --------- | --------------------------------- | -------------------------------- |
-| nama               | string    | Nama lengkap                      | `name`                           |
-| email              | string    | Email login                       | `email`                          |
-| noHp               | string    | Nomor yang bisa dihubungi         | `phone`                          |
-| role               | string    | `pembeli` / `penjual` / `admin`   | `role` (enum `UserRole`)         |
-| status             | string    | `aktif` / `menunggu` / `nonaktif` | `isActive` = (status == `aktif`) |
-| standId            | string    | Hanya untuk penjual               | –                                |
-| jumlahTidakDiambil | number    | Berapa kali pesanan tidak diambil | `noShowCount`                    |
-| createdAt          | timestamp | Waktu daftar                      | –                                |
+| Field              | Tipe      | Keterangan                                      | Model (`UserModel`)              |
+| ------------------ | --------- | ----------------------------------------------- | -------------------------------- |
+| nama               | string    | Nama lengkap                                    | `name`                           |
+| email              | string    | Email login                                     | `email`                          |
+| noHp               | string    | Nomor yang bisa dihubungi                       | `phone`                          |
+| role               | string    | `pembeli` / `penjual` / `admin`                 | `role` (enum `UserRole`)         |
+| status             | string    | `aktif` / `menunggu` / `nonaktif`               | `isActive` = (status == `aktif`) |
+| standId            | string    | Hanya untuk penjual, diisi saat disetujui admin | `standId`                        |
+| namaStandUsulan    | string    | Nama stand yang diisi penjual saat daftar       | `proposedStandName`              |
+| jumlahTidakDiambil | number    | Berapa kali pesanan tidak diambil               | `noShowCount`                    |
+| createdAt          | timestamp | Waktu daftar                                    | –                                |
 
 Aturan isi awal:
 
@@ -90,6 +91,8 @@ disimpan ulang di menu.
 | status        | string       | lihat tabel status di bawah                   | `status`                  |
 | alasanBatal   | string       | Diisi bila dibatalkan/ditolak                 | `cancelReason`            |
 | sudahDirating | boolean      |                                               | `ratingSubmitted`         |
+| rating        | number       | 1–5, diisi pembeli setelah selesai            | –                         |
+| ulasan        | string       | Ulasan singkat pembeli                        | –                         |
 | waktuStatus   | map          | `{menunggu: ts, diproses: ts, siap: ts, ...}` | `timeline[].time`         |
 | createdAt     | timestamp    | Waktu pesan                                   | –                         |
 
@@ -117,8 +120,8 @@ dua daftar terpisah seperti di `app_store.dart`.
 | ----- | ------ | --------------------------------- |
 | next  | number | Nomor pesanan berikutnya hari itu |
 
-Dinaikkan di dalam transaksi Firestore saat checkout, lalu dibentuk menjadi
-`A-001`, `A-002`, dst. Dikerjakan di Minggu 3.
+Dinaikkan di dalam transaction checkout (`OrderService.buatPesanan`), lalu
+dibentuk menjadi `A-001`, `A-002`, dst. Nomor kembali ke 1 setiap hari.
 
 ## Perbedaan dari rancangan awal
 
@@ -131,10 +134,48 @@ Dinaikkan di dalam transaksi Firestore saat checkout, lalu dibentuk menjadi
 6. Tambahan status `tidakDiambil` (sudah ada di `order_status.dart`).
 7. Koleksi baru `counters` untuk nomor pesanan.
 
-## Garis besar Security Rules (diterapkan Minggu 3)
+## Alur pesanan dan stok (Minggu 3)
 
-- Pembeli hanya bisa membaca dan membuat pesanan miliknya sendiri.
-- Penjual hanya bisa mengubah menu dan status pesanan untuk stand miliknya, dan hanya
-  jika `status` akunnya `aktif`.
-- Admin bisa mengubah `status` dan `role` pengguna serta data stand.
-- Selama Minggu 1–2, Firestore memakai **test mode** (aturan terbuka sementara).
+| Aksi            | Fungsi (`OrderService`)     | Perubahan status      | Stok                                                |
+| --------------- | --------------------------- | --------------------- | --------------------------------------------------- |
+| Checkout        | `buatPesanan` (transaction) | – → menunggu          | dikurangi                                           |
+| Terima          | `terimaPesanan`             | menunggu → diproses   | –                                                   |
+| Siap            | `tandaiSiap`                | diproses → siap       | –                                                   |
+| Selesai         | `selesaikanPesanan`         | siap → selesai        | –                                                   |
+| Tolak (penjual) | `tolakPesanan`              | menunggu → dibatalkan | dikembalikan                                        |
+| Batal (pembeli) | `batalkanPesanan`           | menunggu → dibatalkan | dikembalikan                                        |
+| Tidak diambil   | `tandaiTidakDiambil`        | siap → tidakDiambil   | tidak dikembalikan; `jumlahTidakDiambil` pembeli +1 |
+| Rating          | `beriRating`                | (tetap selesai)       | –                                                   |
+
+Setiap perubahan status memeriksa status sebelumnya di dalam transaction,
+jadi dua orang yang menekan tombol bersamaan tidak membuat status melompat.
+
+## Composite index
+
+Ada di `firestore.indexes.json`:
+
+| Koleksi | Field                         | Dipakai oleh                                   |
+| ------- | ----------------------------- | ---------------------------------------------- |
+| orders  | pembeliId ASC, createdAt DESC | `streamPesananPembeli`                         |
+| orders  | standId ASC, createdAt DESC   | `streamPesananStand`, `streamRingkasanHariIni` |
+| users   | role ASC, nama ASC            | `AdminService.streamPengguna(role: ...)`       |
+
+## Security Rules
+
+Ada di `firestore.rules`. Ringkasnya:
+
+- Semua akses wajib login.
+- `users`: pemilik akun hanya bisa membaca miliknya dan mengubah `nama`/`noHp`.
+  Saat daftar, pembeli harus `aktif` dan penjual harus `menunggu`. Penjual hanya
+  boleh menambah `jumlahTidakDiambil` sebanyak 1. Admin boleh semuanya.
+- `stands`: semua yang login bisa membaca. Penjual aktif hanya bisa mengubah
+  info dan status buka stand miliknya. Membuat dan menghapus stand hanya admin.
+- `menus`: penjual mengelola menu standnya. Pembeli hanya boleh mengubah
+  `stok`/`tersedia` (dipakai transaction checkout dan pembatalan).
+- `orders`: pembeli membuat dan membaca pesanannya sendiri, membatalkan saat
+  `menunggu`, dan memberi rating sekali setelah `selesai`. Penjual membaca dan
+  mengubah status pesanan standnya. Pesanan tidak bisa dihapus.
+- Akun `menunggu` atau `nonaktif` tidak bisa memesan atau mengelola stand.
+
+Catatan: setelah Rules ini dipasang, `seed_main.dart` tidak bisa dipakai lagi
+karena membuat penjual yang langsung aktif. Jalankan seed sebelum Rules dipasang.
