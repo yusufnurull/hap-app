@@ -1,30 +1,64 @@
-// Titik masuk khusus untuk mengisi data awal Firestore.
-// Bukan bagian dari aplikasi; jalankan sekali dengan:
+// Titik masuk khusus untuk mengisi data awal Firebase.
+// Bukan bagian dari aplikasi; jalankan dengan:
 //   flutter run -t lib/seed_main.dart
 //
-// Langkah:
-// 1. Daftarkan 2 akun penjual uji dari aplikasi biasa.
-// 2. Salin uid keduanya dari Firebase Console > Authentication.
-// 3. Tempel di _pemilikStand di bawah, lalu jalankan file ini.
+// File ini berisi password akun uji: JANGAN di-commit ke GitHub
+// (sudah perlu dimasukkan ke .gitignore).
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
+import 'core/constants/app_enums.dart';
 import 'firebase_options.dart';
 import 'services/seed_service.dart';
 
-/// standId (dari mock_data.dart) -> uid penjual. Biarkan '' bila belum ada.
-const Map<String, String> _pemilikStand = {
-  'bu-sri': '', // penjual uji 1
-  'mas-joko': '', // penjual uji 2
-  'pojok-minuman': '',
-  'pak-darmo': '',
-};
+/// Akun uji. Boleh diubah; catat dan bagikan ke tim lewat grup.
+const List<SeedAccount> _akunUji = [
+  SeedAccount(
+    nama: 'Pembeli Satu',
+    email: 'pembeli1@hap.test',
+    password: 'hap12345',
+    noHp: '081200000001',
+    role: UserRole.pembeli,
+  ),
+  SeedAccount(
+    nama: 'Pembeli Dua',
+    email: 'pembeli2@hap.test',
+    password: 'hap12345',
+    noHp: '081200000002',
+    role: UserRole.pembeli,
+  ),
+  SeedAccount(
+    nama: 'Bu Sri',
+    email: 'penjual.busri@hap.test',
+    password: 'hap12345',
+    noHp: '081200000003',
+    role: UserRole.penjual,
+    standId: 'bu-sri',
+  ),
+  SeedAccount(
+    nama: 'Mas Joko',
+    email: 'penjual.joko@hap.test',
+    password: 'hap12345',
+    noHp: '081200000004',
+    role: UserRole.penjual,
+    standId: 'mas-joko',
+  ),
+  SeedAccount(
+    nama: 'Admin Hap',
+    email: 'admin@hap.test',
+    password: 'hap12345',
+    noHp: '081200000005',
+    role: UserRole.admin,
+  ),
+];
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  runApp(const MaterialApp(home: _SeedScreen()));
+  runApp(
+    const MaterialApp(debugShowCheckedModeBanner: false, home: _SeedScreen()),
+  );
 }
 
 class _SeedScreen extends StatefulWidget {
@@ -35,18 +69,24 @@ class _SeedScreen extends StatefulWidget {
 }
 
 class _SeedScreenState extends State<_SeedScreen> {
-  String _pesan = 'Tekan tombol untuk mengisi data awal.';
+  final List<String> _log = [];
+  String _hasil = '';
   bool _jalan = false;
 
   Future<void> _isi() async {
-    setState(() => _jalan = true);
+    setState(() {
+      _jalan = true;
+      _log.clear();
+      _hasil = '';
+    });
     try {
       final hasil = await SeedService().isiDataAwal(
-        pemilikStand: _pemilikStand,
+        akun: _akunUji,
+        onProgress: (pesan) => setState(() => _log.add(pesan)),
       );
-      setState(() => _pesan = hasil);
+      setState(() => _hasil = hasil);
     } catch (e) {
-      setState(() => _pesan = 'Gagal: $e');
+      setState(() => _hasil = 'Gagal: $e');
     } finally {
       setState(() => _jalan = false);
     }
@@ -56,20 +96,35 @@ class _SeedScreenState extends State<_SeedScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Seed data Hap!')),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(_pesan, textAlign: TextAlign.center),
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: _jalan ? null : _isi,
-                child: Text(_jalan ? 'Mengisi...' : 'Isi data awal'),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Akan membuat ${_akunUji.length} akun uji, 4 stand, dan menunya.',
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: _jalan ? null : _isi,
+              child: Text(_jalan ? 'Mengisi...' : 'Isi data awal'),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: ListView(
+                children: [
+                  for (final baris in _log) Text('• $baris'),
+                  if (_hasil.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _hasil,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
