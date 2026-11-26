@@ -17,6 +17,7 @@ class StandModel {
     required this.icon,
     this.todayOrders = 0,
     this.ownerId = '',
+    this.photoUrl = '',
   });
 
   final String id;
@@ -35,6 +36,11 @@ class StandModel {
 
   /// uid penjual pemilik stand (field `pemilikId`).
   final String ownerId;
+
+  /// URL foto stand dari Cloudinary (field `fotoUrl`). Kosong = tampilkan ikon.
+  final String photoUrl;
+
+  bool get hasPhoto => photoUrl.isNotEmpty;
 
   /// Jam buka, mis. "07.00".
   String get openTime => _splitHours(openHours).$1;
@@ -61,6 +67,7 @@ class StandModel {
           .toList(),
       icon: (data['ikon'] as String?) ?? 'storefront',
       ownerId: (data['pemilikId'] as String?) ?? '',
+      photoUrl: (data['fotoUrl'] as String?) ?? '',
     );
   }
 
@@ -75,6 +82,7 @@ class StandModel {
       'kategori': categories.map(standCategoryToValue).toList(),
       'ikon': icon,
       'isOpen': isOpen,
+      'fotoUrl': photoUrl,
     };
   }
 
@@ -87,6 +95,7 @@ class StandModel {
     List<StandCategory>? categories,
     int? todayOrders,
     String? ownerId,
+    String? photoUrl,
   }) {
     return StandModel(
       id: id,
@@ -99,6 +108,7 @@ class StandModel {
       icon: icon,
       todayOrders: todayOrders ?? this.todayOrders,
       ownerId: ownerId ?? this.ownerId,
+      photoUrl: photoUrl ?? this.photoUrl,
     );
   }
 }
