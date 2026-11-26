@@ -1,17 +1,16 @@
 // Konfigurasi utama aplikasi Hap!.
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'core/constants/app_enums.dart';
-import 'core/constants/firestore_collections.dart';
 import 'core/theme/app_theme.dart';
 import 'models/user_model.dart';
 import 'providers/app_store.dart';
 import 'providers/auth_provider.dart';
+import 'services/auth_service.dart';
 import 'screens/admin/admin_home_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/splash_screen.dart';
@@ -55,14 +54,21 @@ class HapApp extends StatelessWidget {
   }
 }
 
-class _AuthRouter extends StatelessWidget {
+class _AuthRouter extends StatefulWidget {
   const _AuthRouter();
 
   @override
+  State<_AuthRouter> createState() => _AuthRouterState();
+}
+
+class _AuthRouterState extends State<_AuthRouter> {
+  static final AuthService _authService = AuthService();
+  String? _syncedUserId;
+
+  @override
   Widget build(BuildContext context) {
-    // TODO: ganti dengan auth_service dari Rafli.
     return StreamBuilder<firebase_auth.User?>(
-      stream: firebase_auth.FirebaseAuth.instance.authStateChanges(),
+      stream: _authService.authStateChanges(),
       builder: (context, authSnapshot) {
         if (authSnapshot.hasError) {
           return _RouteMessageScreen(
@@ -76,14 +82,12 @@ class _AuthRouter extends StatelessWidget {
 
         final firebaseUser = authSnapshot.data;
         if (firebaseUser == null) {
+          _syncedUserId = null;
           return const LoginScreen();
         }
 
-        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance
-              .collection(FirestoreCollections.users)
-              .doc(firebaseUser.uid)
-              .snapshots(),
+        return StreamBuilder<UserModel?>(
+          stream: _authService.streamUser(),
           builder: (context, userSnapshot) {
             if (userSnapshot.hasError) {
               return _RouteMessageScreen(
@@ -95,32 +99,27 @@ class _AuthRouter extends StatelessWidget {
               return const _LoadingScreen();
             }
 
-            final document = userSnapshot.data;
-            if (document == null || !document.exists) {
+            final user = userSnapshot.data;
+            if (user == null) {
               return _RouteMessageScreen(
                 message: 'Data akun tidak ditemukan',
                 onSignOut: () => _signOut(context),
               );
             }
-
-            final data = document.data();
-            if (data == null) {
-              return _RouteMessageScreen(
-                message: 'Data akun tidak ditemukan',
-                onSignOut: () => _signOut(context),
-              );
+            if (user.id != firebaseUser.uid) {
+              return const _LoadingScreen();
             }
 
-            final status = data['status'];
-            final user = _userFromDocument(document.id, data);
-            if (user == null || !_isKnownStatus(status)) {
+            final status = user.status;
+            if (!_isKnownStatus(status)) {
               return _RouteMessageScreen(
                 message: 'Data akun tidak lengkap atau tidak valid',
                 onSignOut: () => _signOut(context),
               );
             }
 
-            // TODO: pindahkan nilai status ke konstanta saat sudah tersedia.
+            _syncAppStoreUser(user);
+
             if (status == 'nonaktif') {
               return _RouteMessageScreen(
                 message: 'Akun kamu dinonaktifkan admin',
@@ -151,53 +150,29 @@ class _AuthRouter extends StatelessWidget {
     );
   }
 
-  static UserModel? _userFromDocument(String id, Map<String, dynamic> data) {
-    final name = data['nama'];
-    final email = data['email'];
-    final phone = data['noHp'];
-    final role = _roleFromValue(data['role']);
-    final status = data['status'];
-    final noShowCount = data['jumlahTidakDiambil'];
-
-    if (name is! String ||
-        email is! String ||
-        phone is! String ||
-        role == null ||
-        !_isKnownStatus(status) ||
-        (noShowCount != null && noShowCount is! num)) {
-      return null;
-    }
-
-    return UserModel(
-      id: id,
-      name: name,
-      email: email,
-      phone: phone,
-      role: role,
-      isActive: status != 'nonaktif',
-      noShowCount: (noShowCount as num?)?.toInt() ?? 0,
-    );
+  void _syncAppStoreUser(UserModel user) {
+    if (_syncedUserId == user.id) return;
+    _syncedUserId = user.id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _syncedUserId != user.id) return;
+      // TODO: sementara, sampai semua layar membaca user dari Firebase
+      context.read<AppStore>().registerUser(
+        password: '',
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        standName: user.proposedStandName,
+      );
+    });
   }
 
-  static UserRole? _roleFromValue(Object? value) {
-    switch (value) {
-      case 'admin':
-        return UserRole.admin;
-      case 'penjual':
-        return UserRole.penjual;
-      case 'pembeli':
-        return UserRole.pembeli;
-      default:
-        return null;
-    }
-  }
-
-  static bool _isKnownStatus(Object? status) =>
+  static bool _isKnownStatus(String status) =>
       status == 'aktif' || status == 'menunggu' || status == 'nonaktif';
 
   static Future<void> _signOut(BuildContext context) async {
     try {
-      await firebase_auth.FirebaseAuth.instance.signOut();
+      await _authService.keluar();
     } on firebase_auth.FirebaseAuthException catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

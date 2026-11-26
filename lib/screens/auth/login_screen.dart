@@ -1,17 +1,13 @@
 // Layar masuk pengguna.
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
-import '../../providers/app_store.dart';
-import '../../providers/auth_provider.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/common.dart';
 import '../../widgets/hap_logo.dart';
-import '../role_home.dart';
 import 'register_screen.dart';
-import 'waiting_verification_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -21,9 +17,11 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final _authService = AuthService();
   final _email = TextEditingController(text: 'yusuf@kampus.ac.id');
   final _password = TextEditingController(text: 'kantin123');
   bool _showPassword = false;
+  bool _isLoading = false;
   String _error = '';
 
   @override
@@ -33,30 +31,30 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (_email.text.trim().isEmpty || _password.text.trim().isEmpty) {
       setState(() => _error = 'Isi email dan password terlebih dahulu.');
       return;
     }
-    final store = context.read<AppStore>();
-    final error = store.login(_email.text, _password.text);
-    if (error != null) {
-      setState(() => _error = error);
-      return;
-    }
-    setState(() => _error = '');
+    setState(() {
+      _error = '';
+      _isLoading = true;
+    });
 
-    final user = store.currentUser!;
-    context.read<AuthProvider>().setRole(user.role);
-    if (store.isCurrentSellerPending) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(
-          builder: (_) => const WaitingVerificationScreen(),
-        ),
-        (_) => false,
-      );
-    } else {
-      goToRoleHome(context, user.role);
+    try {
+      await _authService.masuk(email: _email.text, password: _password.text);
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } on AuthFailure catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -71,8 +69,10 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               const HapLogo(height: 64),
               const SizedBox(height: 20),
-              Text('Masuk ke akunmu',
-                  style: hapText(24, weight: FontWeight.w800, height: 1.2)),
+              Text(
+                'Masuk ke akunmu',
+                style: hapText(24, weight: FontWeight.w800, height: 1.2),
+              ),
               const SizedBox(height: 6),
               Text(
                 'Pesan makanan dari kelas dan ambil pas jam istirahat.',
@@ -117,23 +117,32 @@ class _LoginScreenState extends State<LoginScreen> {
                 ErrorText(_error),
               ],
               const SizedBox(height: 24),
-              PrimaryButton(label: 'Masuk', onPressed: _submit),
+              PrimaryButton(
+                label: _isLoading ? 'Sedang masuk...' : 'Masuk',
+                onPressed: _isLoading ? null : _submit,
+              ),
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text('Belum punya akun?',
-                      style: hapText(14, color: AppColors.textSoft)),
+                  Text(
+                    'Belum punya akun?',
+                    style: hapText(14, color: AppColors.textSoft),
+                  ),
                   TextButton(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => const RegisterScreen(),
                       ),
                     ),
-                    child: Text('Daftar',
-                        style: hapText(14,
-                            weight: FontWeight.w700,
-                            color: AppColors.primary)),
+                    child: Text(
+                      'Daftar',
+                      style: hapText(
+                        14,
+                        weight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
+                    ),
                   ),
                 ],
               ),

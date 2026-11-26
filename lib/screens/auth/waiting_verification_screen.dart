@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/common.dart';
-import '../role_home.dart';
 
 class WaitingVerificationScreen extends StatelessWidget {
   const WaitingVerificationScreen({super.key});
@@ -48,7 +48,18 @@ class WaitingVerificationScreen extends StatelessWidget {
                 label: 'Keluar',
                 color: AppColors.textDark,
                 borderColor: AppColors.outline,
-                onPressed: () => logoutToLogin(context),
+                onPressed: () async {
+                  try {
+                    await AuthService().keluar();
+                    if (!context.mounted) return;
+                    Navigator.of(context).popUntil((route) => route.isFirst);
+                  } catch (error) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Gagal keluar: $error')),
+                    );
+                  }
+                },
               ),
             ],
           ),

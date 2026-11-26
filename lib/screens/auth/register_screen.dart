@@ -1,16 +1,12 @@
 // Layar pendaftaran pengguna.
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../../core/constants/app_enums.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
-import '../../providers/app_store.dart';
-import '../../providers/auth_provider.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/common.dart';
-import '../role_home.dart';
-import 'waiting_verification_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -20,12 +16,14 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
+  final _authService = AuthService();
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _phone = TextEditingController();
   final _password = TextEditingController();
   final _standName = TextEditingController();
   UserRole _role = UserRole.pembeli;
+  bool _isLoading = false;
   String _error = '';
 
   @override
@@ -38,7 +36,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (_name.text.trim().isEmpty ||
         _email.text.trim().isEmpty ||
         _phone.text.trim().isEmpty ||
@@ -50,28 +48,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
       setState(() => _error = 'Masukkan nama stand kamu.');
       return;
     }
-    setState(() => _error = '');
+    setState(() {
+      _error = '';
+      _isLoading = true;
+    });
 
-    final store = context.read<AppStore>();
-    store.registerUser(
-          password: _password.text,
-          name: _name.text.trim(),
-          email: _email.text.trim(),
-          phone: _phone.text.trim(),
-          role: _role,
-          standName: _role == UserRole.penjual ? _standName.text.trim() : null,
-        );
-
-    if (_role == UserRole.penjual) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(
-          builder: (_) => const WaitingVerificationScreen(),
-        ),
-        (_) => false,
+    try {
+      await _authService.daftar(
+        nama: _name.text,
+        email: _email.text,
+        noHp: _phone.text,
+        password: _password.text,
+        role: _role,
+        namaStand: _role == UserRole.penjual ? _standName.text : '',
       );
-    } else {
-      context.read<AuthProvider>().setRole(UserRole.pembeli);
-      goToRoleHome(context, UserRole.pembeli);
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } on AuthFailure catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -182,7 +184,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ErrorText(_error),
                     ],
                     const SizedBox(height: 24),
-                    PrimaryButton(label: 'Daftar', onPressed: _submit),
+                    PrimaryButton(
+                      label: _isLoading ? 'Sedang mendaftar...' : 'Daftar',
+                      onPressed: _isLoading ? null : _submit,
+                    ),
                   ],
                 ),
               ),

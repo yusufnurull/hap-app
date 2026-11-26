@@ -7,8 +7,8 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../providers/app_store.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/common.dart';
-import '../role_home.dart';
 
 // Angka ringkasan harian pada prototipe masih statis; nanti dihitung dari
 // koleksi pesanan Firestore.
@@ -362,7 +362,18 @@ class _StandProfileScreenState extends State<StandProfileScreen> {
                   label: 'Keluar',
                   height: 48,
                   fontSize: 14,
-                  onPressed: () => logoutToLogin(context),
+                  onPressed: () async {
+                    try {
+                      await AuthService().keluar();
+                      if (!context.mounted) return;
+                      Navigator.of(context).popUntil((route) => route.isFirst);
+                    } catch (error) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Gagal keluar: $error')),
+                      );
+                    }
+                  },
                 ),
               ],
             ),
