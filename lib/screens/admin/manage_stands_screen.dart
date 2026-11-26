@@ -1,13 +1,18 @@
 // Layar Kelola Stand: daftar semua stand, tambah stand baru, dan ubah data
-// stand (termasuk buka/tutup) lewat form di bottom sheet.
+// stand (termasuk buka/tutup dan foto) lewat form di bottom sheet.
+
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/constants/app_enums.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/icon_map.dart';
 import '../../models/stand_model.dart';
 import '../../services/admin_service.dart';
+import '../../services/cloudinary_service.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/common.dart';
 import 'admin_home_screen.dart';
@@ -120,6 +125,8 @@ class _BarisStand extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: Row(
         children: [
+          _FotoStand(stand: s),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -170,6 +177,32 @@ class _BarisStand extends StatelessWidget {
             borderColor: AppColors.outline,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Foto kecil stand di daftar. Belum ada foto = ikon stand.
+class _FotoStand extends StatelessWidget {
+  const _FotoStand({required this.stand});
+
+  static const double _ukuran = 56;
+
+  final StandModel stand;
+
+  @override
+  Widget build(BuildContext context) {
+    final ikon = IconTile(icon: iconFor(stand.icon), size: _ukuran);
+    if (!stand.hasPhoto) return ikon;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Image.network(
+        // Versi kecil dari Cloudinary supaya hemat kuota.
+        CloudinaryService.thumbnail(stand.photoUrl, 200),
+        width: _ukuran,
+        height: _ukuran,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => ikon,
       ),
     );
   }
@@ -237,8 +270,17 @@ class _FormStandState extends State<_FormStand> {
   };
   late bool _buka = widget.stand?.isOpen ?? false;
 
+  /// Foto yang baru dipilih dari galeri, belum diunggah.
+  File? _fotoBaru;
+
+  /// URL foto yang sudah tersimpan. Kosong = belum ada / dihapus.
+  late String _fotoUrl = widget.stand?.photoUrl ?? '';
+
   bool _menyimpan = false;
+  bool _mengunggah = false;
   String? _galat;
+
+  bool get _adaFoto => _fotoBaru != null || _fotoUrl.isNotEmpty;
 
   bool get _standBaru => widget.stand == null;
 
@@ -262,6 +304,32 @@ class _FormStandState extends State<_FormStand> {
       } else {
         _kategori.add(k);
       }
+    });
+  }
+
+  /// Memilih foto dari galeri. Ukuran dikecilkan supaya unggah cepat.
+  Future<void> _pilihFoto() async {
+    try {
+      final hasil = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1080,
+        imageQuality: 80,
+      );
+      if (hasil == null || !mounted) return; // batal memilih
+      setState(() {
+        _fotoBaru = File(hasil.path);
+        _galat = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _galat = 'Gagal membuka galeri: ${pesanGalat(e)}');
+    }
+  }
+
+  void _hapusFoto() {
+    setState(() {
+      _fotoBaru = null;
+      _fotoUrl = '';
     });
   }
 
@@ -293,6 +361,19 @@ class _FormStandState extends State<_FormStand> {
     final kategori = StandCategory.values.where(_kategori.contains).toList();
 
     try {
+      // Unggah foto dulu (kalau ada yang baru), baru simpan URL-nya.
+      if (_fotoBaru != null) {
+        setState(() => _mengunggah = true);
+        final url = await CloudinaryService().unggahFoto(_fotoBaru!);
+        if (!mounted) return;
+        // Simpan hasilnya supaya tidak diunggah ulang kalau simpan gagal.
+        setState(() {
+          _fotoUrl = url;
+          _fotoBaru = null;
+          _mengunggah = false;
+        });
+      }
+
       if (_standBaru) {
         await _admin.tambahStand(
           StandModel(
@@ -304,6 +385,7 @@ class _FormStandState extends State<_FormStand> {
             locationNote: _lokasi.text.trim(),
             categories: kategori,
             icon: 'storefront',
+            photoUrl: _fotoUrl,
           ),
         );
       } else {
@@ -315,6 +397,7 @@ class _FormStandState extends State<_FormStand> {
             openHours: '$buka–$tutup',
             locationNote: _lokasi.text.trim(),
             categories: kategori,
+            photoUrl: _fotoUrl,
           ),
         );
       }
@@ -325,8 +408,11 @@ class _FormStandState extends State<_FormStand> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        _galat = _mengunggah
+            ? 'Gagal mengunggah foto: ${pesanGalat(e)}'
+            : 'Gagal menyimpan: ${pesanGalat(e)}';
         _menyimpan = false;
-        _galat = 'Gagal menyimpan: ${pesanGalat(e)}';
+        _mengunggah = false;
       });
     }
   }
@@ -355,6 +441,48 @@ class _FormStandState extends State<_FormStand> {
             style: hapText(20, weight: FontWeight.w800),
           ),
           const SizedBox(height: 16),
+          const FieldLabel('Foto stand'),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _KotakFoto(
+                fotoBaru: _fotoBaru,
+                fotoUrl: _fotoUrl,
+                onTap: _menyimpan ? null : _pilihFoto,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Foto persegi (1:1) tampil di kartu stand. '
+                      'Kosongkan bila cukup ikon.',
+                      style: hapText(12, color: AppColors.textSoft),
+                    ),
+                    const SizedBox(height: 4),
+                    TextAction(
+                      label: _adaFoto ? 'Ganti foto' : 'Pilih foto',
+                      onPressed: _menyimpan ? null : _pilihFoto,
+                      fullWidth: false,
+                      height: 36,
+                      fontSize: 13,
+                    ),
+                    if (_adaFoto)
+                      TextAction(
+                        label: 'Hapus foto',
+                        onPressed: _menyimpan ? null : _hapusFoto,
+                        color: AppColors.textSoft,
+                        fullWidth: false,
+                        height: 36,
+                        fontSize: 13,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           LabeledField(
             label: 'Nama stand',
             child: HapField(controller: _nama, hint: 'Contoh: Warung Bu Sri'),
@@ -440,10 +568,80 @@ class _FormStandState extends State<_FormStand> {
           ],
           const SizedBox(height: 20),
           PrimaryButton(
-            label: _menyimpan ? 'Menyimpan...' : 'Simpan',
+            label: _mengunggah
+                ? 'Mengunggah foto...'
+                : _menyimpan
+                ? 'Menyimpan...'
+                : 'Simpan',
             onPressed: _menyimpan ? null : _simpan,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Kotak pratinjau foto stand di form. Ketuk untuk memilih foto.
+class _KotakFoto extends StatelessWidget {
+  const _KotakFoto({
+    required this.fotoBaru,
+    required this.fotoUrl,
+    required this.onTap,
+  });
+
+  static const double _ukuran = 112;
+
+  final File? fotoBaru;
+  final String fotoUrl;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final kosong = Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(
+          Icons.add_a_photo_rounded,
+          size: 28,
+          color: AppColors.textSoft,
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Pilih foto',
+          style: hapText(
+            12,
+            weight: FontWeight.w600,
+            color: AppColors.textSoft,
+          ),
+        ),
+      ],
+    );
+
+    Widget isi;
+    if (fotoBaru != null) {
+      // Foto baru dari galeri (belum diunggah).
+      isi = Image.file(fotoBaru!, fit: BoxFit.cover);
+    } else if (fotoUrl.isNotEmpty) {
+      // Foto lama dari Cloudinary.
+      isi = Image.network(
+        CloudinaryService.thumbnail(fotoUrl, 300),
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => kosong,
+      );
+    } else {
+      isi = kosong;
+    }
+
+    return Material(
+      color: AppColors.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: AppColors.outline),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(width: _ukuran, height: _ukuran, child: isi),
       ),
     );
   }
