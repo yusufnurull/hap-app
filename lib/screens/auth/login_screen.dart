@@ -18,8 +18,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _authService = AuthService();
-  final _email = TextEditingController(text: 'yusuf@kampus.ac.id');
-  final _password = TextEditingController(text: 'kantin123');
+  final _email = TextEditingController();
+  final _password = TextEditingController();
   bool _showPassword = false;
   bool _isLoading = false;
   String _error = '';
