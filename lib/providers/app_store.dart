@@ -112,7 +112,17 @@ class AppStore extends ChangeNotifier {
   List<OrderModel> get myOrders =>
       _buyerOrders.where((order) => order.buyerName == buyerName).toList();
 
-  StandModel get sellerStand => _stands.first;
+  StandModel get sellerStand {
+    final standId = _currentUser?.standId;
+
+    if (standId != null) {
+      for (final stand in _stands) {
+        if (stand.id == standId) return stand;
+      }
+    }
+
+    return _stands.first;
+  }
 
   CartSummary get cartSummary => getCartSummary(_cart, _menus, _stands);
 
