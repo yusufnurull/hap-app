@@ -16,6 +16,7 @@ import '../models/user_model.dart';
 /// Galat pesanan yang pesannya siap ditampilkan ke pengguna.
 class OrderFailure implements Exception {
   const OrderFailure(this.message);
+
   final String message;
 
   @override
@@ -53,8 +54,6 @@ class RingkasanHariIni {
   final int selesai;
   final int dibatalkan;
   final int tidakDiambil;
-
-  /// Total uang dari pesanan yang sudah selesai (dibayar di tempat).
   final int pendapatan;
 
   /// Pesanan yang masih harus ditangani penjual.
@@ -84,92 +83,172 @@ class OrderService {
   // ===========================================================================
 
   /// Membuat pesanan dalam satu transaction:
-  /// 1. cek akun pembeli aktif dan stand buka,
-  /// 2. cek stok setiap menu,
-  /// 3. kurangi stok,
-  /// 4. ambil nomor pesanan harian (A-001, A-002, ...),
-  /// 5. simpan pesanan.
-  /// Bila satu langkah gagal, tidak ada yang berubah.
+  /// 1. Memeriksa akun pembeli dan stand.
+  /// 2. Memeriksa stok dan harga terbaru dari Firestore.
+  /// 3. Mengurangi stok.
+  /// 4. Mengambil nomor pesanan harian.
+  /// 5. Menyimpan pesanan.
   ///
-  /// [items] berasal dari keranjang (CartSummary.lines), catatan sudah
-  /// menempel di item. Mengembalikan pesanan yang dibuat.
+  /// Jika satu langkah gagal, seluruh transaksi dibatalkan.
   Future<OrderModel> buatPesanan({
     required UserModel pembeli,
     required StandModel stand,
     required List<OrderLineItem> items,
     required String jamAmbil,
   }) async {
-    final daftarItem = items.where((i) => i.quantity > 0).toList();
+    // Gabungkan item dengan menuId yang sama.
+    final itemMap = <String, OrderLineItem>{};
+
+    for (final item in items) {
+      if (item.quantity <= 0) continue;
+
+      final existing = itemMap[item.menuId];
+
+      itemMap[item.menuId] = OrderLineItem(
+        menuId: item.menuId,
+        name: item.name,
+        quantity: (existing?.quantity ?? 0) + item.quantity,
+        price: item.price,
+        note: item.note ?? existing?.note,
+      );
+    }
+
+    final daftarItem = itemMap.values.toList();
+
     if (daftarItem.isEmpty) {
       throw const OrderFailure('Keranjang masih kosong.');
     }
+
     if (pembeli.status != AccountStatus.aktif) {
       throw const OrderFailure('Akunmu tidak aktif, tidak bisa memesan.');
     }
 
+    if (stand.id.isEmpty || pembeli.id.isEmpty) {
+      throw const OrderFailure('Data pembeli atau stand tidak valid.');
+    }
+
     final orderRef = _orders.doc();
+
     final counterRef = _db
         .collection(FirestoreCollections.counters)
         .doc(_tanggalHariIni());
 
     final pesanan = await _db.runTransaction<OrderModel>((tx) async {
-      // --- BACA (semua pembacaan harus sebelum penulisan) ---
+      // =========================
+      // BACA DATA FIRESTORE
+      // =========================
+
       final standSnap = await tx.get(_stand(stand.id));
       final standData = standSnap.data();
+
       if (standData == null) {
         throw const OrderFailure('Stand tidak ditemukan.');
       }
+
       if (standData['isOpen'] != true) {
-        throw OrderFailure('${stand.name} sedang tutup.');
+        final namaStand = standData['namaStand'] is String
+            ? standData['namaStand'] as String
+            : stand.name;
+
+        throw OrderFailure('$namaStand sedang tutup.');
       }
 
-      final menuSnaps = <DocumentSnapshot<Map<String, dynamic>>>[];
+      final menuSnaps = <String, DocumentSnapshot<Map<String, dynamic>>>{};
+
       for (final item in daftarItem) {
-        menuSnaps.add(await tx.get(_menu(stand.id, item.menuId)));
+        menuSnaps[item.menuId] = await tx.get(_menu(stand.id, item.menuId));
       }
+
       final counterSnap = await tx.get(counterRef);
 
-      // --- CEK STOK, dan pakai harga terbaru dari Firestore ---
+      // =========================
+      // VALIDASI DATA DAN STOK
+      // =========================
+
       final itemFinal = <OrderLineItem>[];
       final stokBaru = <String, int>{};
-      for (var i = 0; i < daftarItem.length; i++) {
-        final item = daftarItem[i];
-        final data = menuSnaps[i].data();
+
+      for (final item in daftarItem) {
+        final menuSnap = menuSnaps[item.menuId]!;
+        final data = menuSnap.data();
+
         if (data == null) {
           throw OrderFailure('${item.name} sudah tidak dijual.');
         }
-        final stok = (data['stok'] as num?)?.toInt() ?? 0;
-        final tersedia = (data['tersedia'] as bool?) ?? false;
+
+        if (data['stok'] is! num ||
+            data['harga'] is! num ||
+            data['tersedia'] is! bool ||
+            data['nama'] is! String) {
+          throw OrderFailure(
+            'Data menu ${item.name} tidak valid. Hubungi penjual.',
+          );
+        }
+
+        final stok = (data['stok'] as num).toInt();
+        final harga = (data['harga'] as num).toInt();
+        final tersedia = data['tersedia'] as bool;
+        final nama = (data['nama'] as String).trim();
+
+        if (stok < 0 || harga < 0 || nama.isEmpty) {
+          throw OrderFailure('Data menu ${item.name} tidak valid.');
+        }
+
         if (!tersedia || stok <= 0) {
           throw OrderFailure('${item.name} sudah habis.');
         }
+
         if (item.quantity > stok) {
-          throw OrderFailure('Stok ${item.name} tinggal $stok.');
+          throw OrderFailure(
+            'Stok $nama hanya tersisa $stok, '
+            'sedangkan kamu memesan ${item.quantity}.',
+          );
         }
+
         stokBaru[item.menuId] = stok - item.quantity;
+
         itemFinal.add(
           OrderLineItem(
             menuId: item.menuId,
-            name: (data['nama'] as String?) ?? item.name,
+            name: nama,
             quantity: item.quantity,
-            price: (data['harga'] as num?)?.toInt() ?? item.price,
+            price: harga,
             note: item.note,
           ),
         );
       }
 
-      // --- NOMOR PESANAN HARIAN ---
-      final nomorKe = ((counterSnap.data()?['next'] as num?)?.toInt() ?? 1);
+      // =========================
+      // NOMOR PESANAN HARIAN
+      // =========================
+
+      final counterData = counterSnap.data();
+
+      final nomorKe = counterData?['next'] is num
+          ? (counterData!['next'] as num).toInt()
+          : 1;
+
       final nomorPesanan = 'A-${nomorKe.toString().padLeft(3, '0')}';
 
-      // --- TULIS ---
-      stokBaru.forEach((menuId, stok) {
-        tx.update(_menu(stand.id, menuId), {
-          'stok': stok,
-          'tersedia': stok > 0,
+      final namaStand =
+          standData['namaStand'] is String &&
+              (standData['namaStand'] as String).trim().isNotEmpty
+          ? (standData['namaStand'] as String).trim()
+          : stand.name;
+
+      // =========================
+      // TULIS DATA
+      // Semua pembacaan sudah selesai.
+      // =========================
+
+      for (final entry in stokBaru.entries) {
+        tx.update(_menu(stand.id, entry.key), {
+          'stok': entry.value,
+          'tersedia': entry.value > 0,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-      });
+      }
+
       tx.set(counterRef, {'next': nomorKe + 1});
 
       final baru = OrderModel(
@@ -177,21 +256,22 @@ class OrderService {
         orderCode: nomorPesanan,
         buyerName: pembeli.name,
         standId: stand.id,
-        standName: (standData['namaStand'] as String?) ?? stand.name,
+        standName: namaStand,
         pickupTime: jamAmbil,
         status: OrderStatus.menunggu,
         paymentMethod: PaymentValue.labelTunai,
         items: itemFinal,
         timeline: const [],
       );
-      final data = {
+
+      tx.set(orderRef, {
         ...baru.toMap(buyerId: pembeli.id),
         'createdAt': FieldValue.serverTimestamp(),
         'waktuStatus': {
           OrderStatusValue.menunggu: FieldValue.serverTimestamp(),
         },
-      };
-      tx.set(orderRef, data);
+      });
+
       return baru;
     });
 
@@ -210,8 +290,6 @@ class OrderService {
   // ===========================================================================
 
   /// Semua pesanan milik pembeli, terbaru di atas.
-  /// Layar Pesanan Saya memisahkan tab Aktif dan Riwayat dari status.
-  /// Butuh composite index: pembeliId ASC, createdAt DESC.
   Stream<List<OrderModel>> streamPesananPembeli(String pembeliId) {
     return _orders
         .where('pembeliId', isEqualTo: pembeliId)
@@ -231,7 +309,6 @@ class OrderService {
   }
 
   /// Pesanan masuk hari ini untuk satu stand, terbaru di atas.
-  /// Butuh composite index: standId ASC, createdAt DESC.
   Stream<List<SellerOrderModel>> streamPesananStand(String standId) {
     return _queryHariIni(standId).snapshots().map(
       (s) =>
@@ -242,8 +319,14 @@ class OrderService {
   /// Ringkasan hari ini untuk layar Profil Stand.
   Stream<RingkasanHariIni> streamRingkasanHariIni(String standId) {
     return _queryHariIni(standId).snapshots().map((s) {
-      var menunggu = 0, diproses = 0, siap = 0, selesai = 0;
-      var batal = 0, tidakDiambil = 0, pendapatan = 0;
+      var menunggu = 0;
+      var diproses = 0;
+      var siap = 0;
+      var selesai = 0;
+      var batal = 0;
+      var tidakDiambil = 0;
+      var pendapatan = 0;
+
       for (final d in s.docs) {
         switch (d.data()['status']) {
           case OrderStatusValue.menunggu:
@@ -261,6 +344,7 @@ class OrderService {
             tidakDiambil++;
         }
       }
+
       return RingkasanHariIni(
         totalPesanan: s.docs.length,
         menunggu: menunggu,
@@ -299,7 +383,7 @@ class OrderService {
     ke: OrderStatus.siapDiambil,
   );
 
-  /// Siap -> Selesai (sudah diambil dan dibayar).
+  /// Siap -> Selesai.
   Future<void> selesaikanPesanan(String orderId) => _ubahStatus(
     orderId,
     dari: OrderStatusValue.siap,
@@ -310,21 +394,30 @@ class OrderService {
   Future<void> tolakPesanan(String orderId, {required String alasan}) =>
       _batalDanKembalikanStok(orderId, alasan: alasan);
 
-  /// Siap -> Tidak diambil. Menambah jumlahTidakDiambil pembeli.
-  /// Stok tidak dikembalikan karena makanan sudah dibuat.
+  /// Siap -> Tidak diambil.
   Future<void> tandaiTidakDiambil(String orderId) async {
     await _db.runTransaction((tx) async {
-      final snap = await tx.get(_orders.doc(orderId));
+      final orderRef = _orders.doc(orderId);
+      final snap = await tx.get(orderRef);
       final data = _wajibAda(snap);
+
       _wajibStatus(data, OrderStatusValue.siap);
 
-      tx.update(_orders.doc(orderId), {
+      final pembeliId = data['pembeliId'] as String?;
+
+      DocumentSnapshot<Map<String, dynamic>>? userSnap;
+
+      if (pembeliId != null && pembeliId.isNotEmpty) {
+        userSnap = await tx.get(_user(pembeliId));
+      }
+
+      tx.update(orderRef, {
         'status': OrderStatusValue.tidakDiambil,
         ...waktuStatusUpdate(OrderStatus.tidakDiambil),
       });
-      final pembeliId = data['pembeliId'] as String?;
-      if (pembeliId != null && pembeliId.isNotEmpty) {
-        tx.update(_user(pembeliId), {
+
+      if (userSnap != null && userSnap.exists) {
+        tx.update(_user(pembeliId!), {
           'jumlahTidakDiambil': FieldValue.increment(1),
         });
       }
@@ -336,7 +429,6 @@ class OrderService {
   // ===========================================================================
 
   /// Pembeli membatalkan pesanan. Hanya boleh saat masih Menunggu.
-  /// Stok dikembalikan.
   Future<void> batalkanPesanan(String orderId, {String? alasan}) =>
       _batalDanKembalikanStok(
         orderId,
@@ -354,14 +446,19 @@ class OrderService {
     if (bintang < 1 || bintang > 5) {
       throw const OrderFailure('Rating harus 1 sampai 5 bintang.');
     }
+
     await _db.runTransaction((tx) async {
-      final snap = await tx.get(_orders.doc(orderId));
+      final orderRef = _orders.doc(orderId);
+      final snap = await tx.get(orderRef);
       final data = _wajibAda(snap);
+
       _wajibStatus(data, OrderStatusValue.selesai);
+
       if (data['sudahDirating'] == true) {
         throw const OrderFailure('Pesanan ini sudah diberi rating.');
       }
-      tx.update(_orders.doc(orderId), {
+
+      tx.update(orderRef, {
         'rating': bintang,
         'ulasan': ulasan.trim(),
         'sudahDirating': true,
@@ -379,22 +476,29 @@ class OrderService {
     required OrderStatus ke,
   }) async {
     await _db.runTransaction((tx) async {
-      final snap = await tx.get(_orders.doc(orderId));
-      _wajibStatus(_wajibAda(snap), dari);
-      tx.update(_orders.doc(orderId), {
+      final orderRef = _orders.doc(orderId);
+      final snap = await tx.get(orderRef);
+      final data = _wajibAda(snap);
+
+      _wajibStatus(data, dari);
+
+      tx.update(orderRef, {
         'status': orderStatusToValue(ke),
         ...waktuStatusUpdate(ke),
       });
     });
   }
 
+  /// Membatalkan pesanan dan mengembalikan stok secara atomik.
   Future<void> _batalDanKembalikanStok(
     String orderId, {
     required String alasan,
   }) async {
     await _db.runTransaction((tx) async {
-      final snap = await tx.get(_orders.doc(orderId));
+      final orderRef = _orders.doc(orderId);
+      final snap = await tx.get(orderRef);
       final data = _wajibAda(snap);
+
       if (data['status'] != OrderStatusValue.menunggu) {
         throw const OrderFailure(
           'Pesanan sudah diproses penjual, tidak bisa dibatalkan.',
@@ -402,30 +506,56 @@ class OrderService {
       }
 
       final standId = (data['standId'] as String?) ?? '';
+
+      if (standId.isEmpty) {
+        throw const OrderFailure('Data stand pada pesanan tidak valid.');
+      }
+
       final items = (data['items'] as List<dynamic>? ?? const [])
           .whereType<Map>()
           .map((m) => OrderLineItem.fromMap(Map<String, dynamic>.from(m)))
+          .where((item) => item.quantity > 0)
           .toList();
 
-      // Baca semua menu dulu (aturan transaction: baca sebelum tulis).
-      final menuSnaps = <DocumentSnapshot<Map<String, dynamic>>>[];
+      // Gabungkan kuantitas berdasarkan menuId.
+      final jumlahDikembalikan = <String, int>{};
+
       for (final item in items) {
-        menuSnaps.add(await tx.get(_menu(standId, item.menuId)));
+        jumlahDikembalikan.update(
+          item.menuId,
+          (jumlah) => jumlah + item.quantity,
+          ifAbsent: () => item.quantity,
+        );
       }
 
-      for (var i = 0; i < items.length; i++) {
-        final menuData = menuSnaps[i].data();
-        if (menuData == null) continue; // menu sudah dihapus penjual
-        final stok =
-            ((menuData['stok'] as num?)?.toInt() ?? 0) + items[i].quantity;
-        tx.update(menuSnaps[i].reference, {
-          'stok': stok,
-          'tersedia': true,
+      // Baca semua menu terlebih dahulu.
+      final menuSnaps = <String, DocumentSnapshot<Map<String, dynamic>>>{};
+
+      for (final menuId in jumlahDikembalikan.keys) {
+        menuSnaps[menuId] = await tx.get(_menu(standId, menuId));
+      }
+
+      // Kembalikan stok setelah seluruh pembacaan selesai.
+      for (final entry in jumlahDikembalikan.entries) {
+        final menuSnap = menuSnaps[entry.key]!;
+        final menuData = menuSnap.data();
+
+        if (menuData == null) continue;
+
+        final stokLama = menuData['stok'] is num
+            ? (menuData['stok'] as num).toInt()
+            : 0;
+
+        final stokBaru = stokLama + entry.value;
+
+        tx.update(menuSnap.reference, {
+          'stok': stokBaru,
+          'tersedia': stokBaru > 0,
           'updatedAt': FieldValue.serverTimestamp(),
         });
       }
 
-      tx.update(_orders.doc(orderId), {
+      tx.update(orderRef, {
         'status': OrderStatusValue.dibatalkan,
         'alasanBatal': alasan,
         ...waktuStatusUpdate(OrderStatus.dibatalkan),
@@ -435,7 +565,11 @@ class OrderService {
 
   Map<String, dynamic> _wajibAda(DocumentSnapshot<Map<String, dynamic>> s) {
     final data = s.data();
-    if (data == null) throw const OrderFailure('Pesanan tidak ditemukan.');
+
+    if (data == null) {
+      throw const OrderFailure('Pesanan tidak ditemukan.');
+    }
+
     return data;
   }
 
@@ -448,14 +582,16 @@ class OrderService {
   }
 }
 
-/// "2026-11-25", dipakai sebagai id dokumen counters.
+/// ID dokumen counters berdasarkan tanggal lokal.
 String _tanggalHariIni() {
   final n = DateTime.now();
+
   return '${n.year}-${n.month.toString().padLeft(2, '0')}-'
       '${n.day.toString().padLeft(2, '0')}';
 }
 
 Timestamp _awalHariIni() {
   final n = DateTime.now();
+
   return Timestamp.fromDate(DateTime(n.year, n.month, n.day));
 }

@@ -152,18 +152,13 @@ class _AuthRouterState extends State<_AuthRouter> {
 
   void _syncAppStoreUser(UserModel user) {
     if (_syncedUserId == user.id) return;
+
     _syncedUserId = user.id;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _syncedUserId != user.id) return;
-      // TODO: sementara, sampai semua layar membaca user dari Firebase
-      context.read<AppStore>().registerUser(
-        password: '',
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        standName: user.proposedStandName,
-      );
+
+      context.read<AppStore>().syncFirebaseUser(user);
     });
   }
 

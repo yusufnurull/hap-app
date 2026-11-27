@@ -1,5 +1,3 @@
-// Konfirmasi dan pembayaran pesanan (bayar di tempat).
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -21,23 +19,68 @@ class CheckoutScreen extends StatefulWidget {
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
   String _pickupTime = '12.00';
+  bool _isLoading = false;
 
-  void _placeOrder() {
+  Future<void> _placeOrder() async {
+    if (_isLoading) return;
+
     final store = context.read<AppStore>();
-    final order = store.placeOrder(_pickupTime);
-    if (order == null) return; // stok berubah: peringatan tampil di layar ini
 
-    final nav = Navigator.of(context);
-    store.setBuyerTab(1); // Pesanan
-    nav.popUntil((r) => r.isFirst);
-    nav.push(MaterialPageRoute<void>(
-      builder: (_) => OrderDetailScreen(orderId: order.id),
-    ));
+    if (store.checkoutWarnings.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(store.checkoutWarnings.join('\n')),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final order = await store.placeOrder(_pickupTime);
+
+      if (!mounted) return;
+
+      if (order == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pesanan belum berhasil dibuat.')),
+        );
+        return;
+      }
+
+      store.setBuyerTab(1);
+
+      Navigator.of(context).popUntil((route) => route.isFirst);
+
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => OrderDetailScreen(orderId: order.id),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      final message = error.toString().replaceFirst('Exception: ', '');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   void _goHome() {
     context.read<AppStore>().setBuyerTab(0);
-    Navigator.of(context).popUntil((r) => r.isFirst);
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   @override
@@ -51,6 +94,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         child: Column(
           children: [
             const ScreenHeader(title: 'Checkout'),
+
             if (summary.totalItems == 0)
               Expanded(
                 child: Padding(
@@ -63,8 +107,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         WarningBox(messages: warnings),
                         const SizedBox(height: 12),
                       ],
-                      Text('Belum ada item di keranjang',
-                          style: hapText(16, weight: FontWeight.w600)),
+                      Text(
+                        'Belum ada item di keranjang',
+                        style: hapText(16, weight: FontWeight.w600),
+                      ),
                       const SizedBox(height: 12),
                       PrimaryButton(
                         label: 'Pilih Menu di Beranda',
@@ -83,18 +129,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       WarningBox(messages: warnings),
                       const SizedBox(height: 24),
                     ],
+
                     SectionHeading(
                       title: 'Ringkasan Pesanan',
                       trailing: summary.standName,
                     ),
+
                     const SizedBox(height: 10),
                     const RowDivider(),
+
                     for (final line in summary.lines)
                       Container(
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         decoration: const BoxDecoration(
                           border: Border(
-                              bottom: BorderSide(color: AppColors.surface)),
+                            bottom: BorderSide(color: AppColors.surface),
+                          ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -109,30 +159,48 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Text(formatRupiah(line.subtotal),
-                                    style: hapText(14,
-                                        weight: FontWeight.w700,
-                                        color: AppColors.primary,
-                                        tabular: true)),
+                                Text(
+                                  formatRupiah(line.subtotal),
+                                  style: hapText(
+                                    14,
+                                    weight: FontWeight.w700,
+                                    color: AppColors.primary,
+                                    tabular: true,
+                                  ),
+                                ),
                               ],
                             ),
                             if (line.note != null)
                               Padding(
                                 padding: const EdgeInsets.only(top: 2),
-                                child: Text('Catatan: ${line.note}',
-                                    style: hapText(12,
-                                        color: AppColors.textMuted)),
+                                child: Text(
+                                  'Catatan: ${line.note}',
+                                  style: hapText(
+                                    12,
+                                    color: AppColors.textMuted,
+                                  ),
+                                ),
                               ),
                           ],
                         ),
                       ),
+
                     const SizedBox(height: 24),
-                    Text('Jam Ambil',
-                        style: hapText(18, weight: FontWeight.w700)),
+
+                    Text(
+                      'Jam Ambil',
+                      style: hapText(18, weight: FontWeight.w700),
+                    ),
+
                     const SizedBox(height: 10),
-                    Text('Pilih waktu kamu datang ke ${summary.standName}.',
-                        style: hapText(13, color: AppColors.textMuted)),
+
+                    Text(
+                      'Pilih waktu kamu datang ke ${summary.standName}.',
+                      style: hapText(13, color: AppColors.textMuted),
+                    ),
+
                     const SizedBox(height: 10),
+
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -147,15 +215,27 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               vertical: 11,
                               fontSize: 13,
                               tabular: true,
-                              onTap: () => setState(() => _pickupTime = slot),
+                              onTap: () {
+                                if (_isLoading) return;
+
+                                setState(() {
+                                  _pickupTime = slot;
+                                });
+                              },
                             ),
                           ),
                       ],
                     ),
+
                     const SizedBox(height: 24),
-                    Text('Metode Pembayaran',
-                        style: hapText(18, weight: FontWeight.w700)),
+
+                    Text(
+                      'Metode Pembayaran',
+                      style: hapText(18, weight: FontWeight.w700),
+                    ),
+
                     const SizedBox(height: 10),
+
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -176,11 +256,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Bayar di tempat',
-                                    style: hapText(15, weight: FontWeight.w600)),
+                                Text(
+                                  'Bayar di tempat',
+                                  style: hapText(15, weight: FontWeight.w600),
+                                ),
                                 Text(
                                   'Bayar langsung di stand saat mengambil pesanan.',
-                                  style: hapText(12, color: AppColors.textMuted),
+                                  style: hapText(
+                                    12,
+                                    color: AppColors.textMuted,
+                                  ),
                                 ),
                               ],
                             ),
@@ -191,6 +276,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ],
                 ),
               ),
+
               Container(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
                 decoration: const BoxDecoration(
@@ -203,20 +289,34 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Total bayar',
-                            style: hapText(14,
-                                weight: FontWeight.w500,
-                                color: const Color(0xB3302B27))),
-                        Text(formatRupiah(summary.totalPrice),
-                            style: hapText(18,
-                                weight: FontWeight.w800,
-                                color: AppColors.primary,
-                                tabular: true)),
+                        Text(
+                          'Total bayar',
+                          style: hapText(
+                            14,
+                            weight: FontWeight.w500,
+                            color: const Color(0xB3302B27),
+                          ),
+                        ),
+                        Text(
+                          formatRupiah(summary.totalPrice),
+                          style: hapText(
+                            18,
+                            weight: FontWeight.w800,
+                            color: AppColors.primary,
+                            tabular: true,
+                          ),
+                        ),
                       ],
                     ),
+
                     const SizedBox(height: 12),
+
                     PrimaryButton(
-                        label: 'Pesan sekarang', onPressed: _placeOrder),
+                      label: _isLoading
+                          ? 'Memproses pesanan...'
+                          : 'Pesan sekarang',
+                      onPressed: _isLoading ? null : _placeOrder,
+                    ),
                   ],
                 ),
               ),
