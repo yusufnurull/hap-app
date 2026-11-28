@@ -21,7 +21,11 @@ const List<OrderStatus> _stepOrder = [
   OrderStatus.selesai,
 ];
 
-const List<String> _cancelReasons = ['Salah pesan', 'Jadwal berubah', 'Lainnya'];
+const List<String> _cancelReasons = [
+  'Salah pesan',
+  'Jadwal berubah',
+  'Lainnya',
+];
 
 class OrderDetailScreen extends StatelessWidget {
   const OrderDetailScreen({super.key, required this.orderId});
@@ -39,7 +43,14 @@ class OrderDetailScreen extends StatelessWidget {
       builder: (_) => const _CancelSheet(),
     );
     if (result != null) {
-      store.cancelBuyerOrder(order.id, reason: result.reason);
+      final error = await store.cancelBuyerOrder(
+        order.id,
+        reason: result.reason,
+      );
+      if (error != null && context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error)));
+      }
     }
   }
 
@@ -49,11 +60,13 @@ class OrderDetailScreen extends StatelessWidget {
     final order = store.buyerOrderById(orderId);
     if (order == null) {
       return const Scaffold(
-          body: Center(child: Text('Pesanan tidak ditemukan')));
+        body: Center(child: Text('Pesanan tidak ditemukan')),
+      );
     }
 
     final total = calculateOrderTotal(order.items);
-    final stepIndex = (order.status == OrderStatus.dibatalkan ||
+    final stepIndex =
+        (order.status == OrderStatus.dibatalkan ||
             order.status == OrderStatus.tidakDiambil)
         ? -1
         : _stepOrder.indexOf(order.status);
@@ -75,8 +88,10 @@ class OrderDetailScreen extends StatelessWidget {
                     status: order.status,
                   ),
                   const SizedBox(height: 24),
-                  Text('Progres Pesanan',
-                      style: hapText(18, weight: FontWeight.w700)),
+                  Text(
+                    'Progres Pesanan',
+                    style: hapText(18, weight: FontWeight.w700),
+                  ),
                   const SizedBox(height: 12),
                   _progress(order, stepIndex),
                   const SizedBox(height: 24),
@@ -88,22 +103,30 @@ class OrderDetailScreen extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.storefront_rounded,
-                            size: 22, color: AppColors.textDark),
+                        const Icon(
+                          Icons.storefront_rounded,
+                          size: 22,
+                          color: AppColors.textDark,
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                  'Lokasi ambil · ${location ?? 'Area Kantin'}',
-                                  style: hapText(12,
-                                      weight: FontWeight.w500,
-                                      color: AppColors.textMuted)),
-                              Text(order.standName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: hapText(15, weight: FontWeight.w600)),
+                                'Lokasi ambil · ${location ?? 'Area Kantin'}',
+                                style: hapText(
+                                  12,
+                                  weight: FontWeight.w500,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                              Text(
+                                order.standName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: hapText(15, weight: FontWeight.w600),
+                              ),
                             ],
                           ),
                         ),
@@ -111,21 +134,32 @@ class OrderDetailScreen extends StatelessWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text('Jam ambil',
-                                style: hapText(12,
-                                    weight: FontWeight.w500,
-                                    color: AppColors.textMuted)),
-                            Text('${order.pickupTime} WIB',
-                                style: hapText(15,
-                                    weight: FontWeight.w700, tabular: true)),
+                            Text(
+                              'Jam ambil',
+                              style: hapText(
+                                12,
+                                weight: FontWeight.w500,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                            Text(
+                              '${order.pickupTime} WIB',
+                              style: hapText(
+                                15,
+                                weight: FontWeight.w700,
+                                tabular: true,
+                              ),
+                            ),
                           ],
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 24),
-                  Text('Rincian Pesanan',
-                      style: hapText(18, weight: FontWeight.w700)),
+                  Text(
+                    'Rincian Pesanan',
+                    style: hapText(18, weight: FontWeight.w700),
+                  ),
                   const SizedBox(height: 12),
                   const RowDivider(),
                   for (final item in order.items) _itemRow(item),
@@ -133,28 +167,41 @@ class OrderDetailScreen extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Total bayar',
-                          style: hapText(15, weight: FontWeight.w600)),
-                      Text(formatRupiah(total),
-                          style: hapText(18,
-                              weight: FontWeight.w800,
-                              color: AppColors.primary,
-                              tabular: true)),
+                      Text(
+                        'Total bayar',
+                        style: hapText(15, weight: FontWeight.w600),
+                      ),
+                      Text(
+                        formatRupiah(total),
+                        style: hapText(
+                          18,
+                          weight: FontWeight.w800,
+                          color: AppColors.primary,
+                          tabular: true,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Metode pembayaran',
-                          style: hapText(13, color: const Color(0xB3302B27))),
+                      Text(
+                        'Metode pembayaran',
+                        style: hapText(13, color: const Color(0xB3302B27)),
+                      ),
                       Row(
                         children: [
-                          const Icon(Icons.payments_rounded,
-                              size: 16, color: AppColors.textDark),
+                          const Icon(
+                            Icons.payments_rounded,
+                            size: 16,
+                            color: AppColors.textDark,
+                          ),
                           const SizedBox(width: 4),
-                          Text(order.paymentMethod,
-                              style: hapText(13, weight: FontWeight.w600)),
+                          Text(
+                            order.paymentMethod,
+                            style: hapText(13, weight: FontWeight.w600),
+                          ),
                         ],
                       ),
                     ],
@@ -182,13 +229,20 @@ class OrderDetailScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Pesanan ini dibatalkan.',
-                style: hapText(14,
-                    weight: FontWeight.w600, color: AppColors.primary)),
+            Text(
+              'Pesanan ini dibatalkan.',
+              style: hapText(
+                14,
+                weight: FontWeight.w600,
+                color: AppColors.primary,
+              ),
+            ),
             if (order.cancelReason != null) ...[
               const SizedBox(height: 4),
-              Text('Alasan: ${order.cancelReason}',
-                  style: hapText(13, color: AppColors.textSoft)),
+              Text(
+                'Alasan: ${order.cancelReason}',
+                style: hapText(13, color: AppColors.textSoft),
+              ),
             ],
           ],
         ),
@@ -213,7 +267,12 @@ class OrderDetailScreen extends StatelessWidget {
     return Column(
       children: [
         for (var i = 0; i < order.timeline.length; i++)
-          _step(order.timeline[i], i, stepIndex, i == order.timeline.length - 1),
+          _step(
+            order.timeline[i],
+            i,
+            stepIndex,
+            i == order.timeline.length - 1,
+          ),
       ],
     );
   }
@@ -259,24 +318,24 @@ class OrderDetailScreen extends StatelessWidget {
                 child: isDone
                     ? Icon(Icons.check_rounded, size: 14, color: fg)
                     : isCurrent
-                        ? Icon(Icons.schedule_rounded, size: 14, color: fg)
-                        : Center(
-                            child: Container(
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                  color: fg, shape: BoxShape.circle),
-                            ),
+                    ? Icon(Icons.schedule_rounded, size: 14, color: fg)
+                    : Center(
+                        child: Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: fg,
+                            shape: BoxShape.circle,
                           ),
+                        ),
+                      ),
               ),
               if (!isLast)
                 Expanded(
                   child: Container(
                     width: 2,
                     margin: const EdgeInsets.symmetric(vertical: 4),
-                    color: isDone
-                        ? const Color(0xA6302B27)
-                        : AppColors.surface,
+                    color: isDone ? const Color(0xA6302B27) : AppColors.surface,
                   ),
                 ),
             ],
@@ -294,21 +353,32 @@ class OrderDetailScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                          child: Text(step.label,
-                              style: hapText(15,
-                                  weight: FontWeight.w600, height: 1.25)),
+                          child: Text(
+                            step.label,
+                            style: hapText(
+                              15,
+                              weight: FontWeight.w600,
+                              height: 1.25,
+                            ),
+                          ),
                         ),
                         if (step.time != null && isReached)
-                          Text(step.time!,
-                              style: hapText(12,
-                                  weight: FontWeight.w600,
-                                  color: AppColors.textMuted,
-                                  tabular: true)),
+                          Text(
+                            step.time!,
+                            style: hapText(
+                              12,
+                              weight: FontWeight.w600,
+                              color: AppColors.textMuted,
+                              tabular: true,
+                            ),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 2),
-                    Text(step.description,
-                        style: hapText(13, color: AppColors.textMuted)),
+                    Text(
+                      step.description,
+                      style: hapText(13, color: AppColors.textMuted),
+                    ),
                   ],
                 ),
               ),
@@ -332,15 +402,21 @@ class OrderDetailScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Flexible(
-                child: Text('${item.quantity}x ${item.name}',
-                    style: hapText(16, weight: FontWeight.w600)),
+                child: Text(
+                  '${item.quantity}x ${item.name}',
+                  style: hapText(16, weight: FontWeight.w600),
+                ),
               ),
               const SizedBox(width: 12),
-              Text(formatRupiah(item.subtotal),
-                  style: hapText(16,
-                      weight: FontWeight.w700,
-                      color: AppColors.primary,
-                      tabular: true)),
+              Text(
+                formatRupiah(item.subtotal),
+                style: hapText(
+                  16,
+                  weight: FontWeight.w700,
+                  color: AppColors.primary,
+                  tabular: true,
+                ),
+              ),
             ],
           ),
           if (item.note != null) ...[
@@ -351,8 +427,10 @@ class OrderDetailScreen extends StatelessWidget {
                 color: const Color(0xA6F2E6D5),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text('Catatan: ${item.note}',
-                  style: hapText(13, color: AppColors.textSoft)),
+              child: Text(
+                'Catatan: ${item.note}',
+                style: hapText(13, color: AppColors.textSoft),
+              ),
             ),
           ],
         ],
@@ -361,53 +439,67 @@ class OrderDetailScreen extends StatelessWidget {
   }
 
   List<Widget> _actions(BuildContext context, OrderModel order) {
-    final store = context.read<AppStore>();
     final widgets = <Widget>[];
 
     if (order.status == OrderStatus.siapDiambil) {
-      widgets.add(PrimaryButton(
-        label: 'Konfirmasi Sudah Diambil',
-        onPressed: () => store.confirmPickedUp(order.id),
-      ));
+      // Penjual yang menandai selesai saat pesanan diambil dan dibayar.
+      widgets.add(
+        Text(
+          'Tunjukkan tiket ${order.orderCode} ke penjual saat mengambil. '
+          'Penjual yang akan menandai pesanan selesai.',
+          textAlign: TextAlign.center,
+          style: hapText(13, color: AppColors.textSoft),
+        ),
+      );
     } else if (order.status == OrderStatus.selesai && !order.ratingSubmitted) {
-      widgets.add(PrimaryButton(
-        label: 'Beri Rating',
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => RatingScreen(orderId: order.id),
+      widgets.add(
+        PrimaryButton(
+          label: 'Beri Rating',
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => RatingScreen(orderId: order.id),
+            ),
           ),
         ),
-      ));
+      );
       widgets.add(const SizedBox(height: 10));
-      widgets.add(OutlineAction(
-        label: 'Pesan Menu Lain',
-        height: 44,
-        fontSize: 14,
-        color: AppColors.textDark,
-        borderColor: AppColors.outline,
-        onPressed: () => _orderAgain(context),
-      ));
+      widgets.add(
+        OutlineAction(
+          label: 'Pesan Menu Lain',
+          height: 44,
+          fontSize: 14,
+          color: AppColors.textDark,
+          borderColor: AppColors.outline,
+          onPressed: () => _orderAgain(context),
+        ),
+      );
     } else {
-      widgets.add(PrimaryButton(
-        label: 'Pesan Menu Lain',
-        onPressed: () => _orderAgain(context),
-      ));
+      widgets.add(
+        PrimaryButton(
+          label: 'Pesan Menu Lain',
+          onPressed: () => _orderAgain(context),
+        ),
+      );
     }
 
     if (order.status == OrderStatus.menunggu) {
       widgets.add(const SizedBox(height: 10));
-      widgets.add(TextAction(
-        label: 'Batalkan pesanan',
-        onPressed: () => _cancel(context, order),
-      ));
+      widgets.add(
+        TextAction(
+          label: 'Batalkan pesanan',
+          onPressed: () => _cancel(context, order),
+        ),
+      );
     } else if (order.status == OrderStatus.diproses ||
         order.status == OrderStatus.siapDiambil ||
         order.status == OrderStatus.selesai) {
       widgets.add(const SizedBox(height: 10));
-      widgets.add(Text(
-        'Pesanan sedang disiapkan dan tidak bisa dibatalkan. Hubungi penjual langsung jika ada kendala.',
-        style: hapText(12, color: AppColors.textMuted, height: 1.5),
-      ));
+      widgets.add(
+        Text(
+          'Pesanan sedang disiapkan dan tidak bisa dibatalkan. Hubungi penjual langsung jika ada kendala.',
+          style: hapText(12, color: AppColors.textMuted, height: 1.5),
+        ),
+      );
     }
     return widgets;
   }
@@ -437,11 +529,15 @@ class _CancelSheetState extends State<_CancelSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Kenapa dibatalkan?',
-              style: hapText(18, weight: FontWeight.w700)),
+          Text(
+            'Kenapa dibatalkan?',
+            style: hapText(18, weight: FontWeight.w700),
+          ),
           const SizedBox(height: 4),
-          Text('Pilih alasan pembatalan (opsional).',
-              style: hapText(13, color: AppColors.textMuted)),
+          Text(
+            'Pilih alasan pembatalan (opsional).',
+            style: hapText(13, color: AppColors.textMuted),
+          ),
           const SizedBox(height: 16),
           Wrap(
             spacing: 8,

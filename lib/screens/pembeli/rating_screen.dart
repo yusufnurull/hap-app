@@ -32,7 +32,8 @@ class _RatingScreenState extends State<RatingScreen> {
     final order = store.buyerOrderById(widget.orderId);
     if (order == null) {
       return const Scaffold(
-          body: Center(child: Text('Pesanan tidak ditemukan')));
+        body: Center(child: Text('Pesanan tidak ditemukan')),
+      );
     }
 
     return Scaffold(
@@ -51,17 +52,24 @@ class _RatingScreenState extends State<RatingScreen> {
                       padding: const EdgeInsets.only(bottom: 12),
                       decoration: const BoxDecoration(
                         border: Border(
-                            bottom: BorderSide(color: AppColors.surface)),
+                          bottom: BorderSide(color: AppColors.surface),
+                        ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Pesanan ${order.orderCode}',
-                              style: hapText(12,
-                                  weight: FontWeight.w500,
-                                  color: AppColors.textMuted)),
-                          Text(order.standName,
-                              style: hapText(18, weight: FontWeight.w700)),
+                          Text(
+                            'Pesanan ${order.orderCode}',
+                            style: hapText(
+                              12,
+                              weight: FontWeight.w500,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                          Text(
+                            order.standName,
+                            style: hapText(18, weight: FontWeight.w700),
+                          ),
                         ],
                       ),
                     ),
@@ -71,20 +79,24 @@ class _RatingScreenState extends State<RatingScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         decoration: const BoxDecoration(
                           border: Border(
-                              bottom: BorderSide(color: AppColors.surface)),
+                            bottom: BorderSide(color: AppColors.surface),
+                          ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(item.name,
-                                style: hapText(16, weight: FontWeight.w600)),
+                            Text(
+                              item.name,
+                              style: hapText(16, weight: FontWeight.w600),
+                            ),
                             const SizedBox(height: 8),
                             Row(
                               children: [
                                 for (var star = 1; star <= 5; star++)
                                   InkResponse(
                                     onTap: () => setState(
-                                        () => _ratings[item.menuId] = star),
+                                      () => _ratings[item.menuId] = star,
+                                    ),
                                     child: SizedBox(
                                       width: 40,
                                       height: 40,
@@ -93,8 +105,8 @@ class _RatingScreenState extends State<RatingScreen> {
                                             ? Icons.star_rounded
                                             : Icons.star_outline_rounded,
                                         size: 28,
-                                        color: star <=
-                                                (_ratings[item.menuId] ?? 5)
+                                        color:
+                                            star <= (_ratings[item.menuId] ?? 5)
                                             ? AppColors.accent
                                             : const Color(0x40302B27),
                                       ),
@@ -118,8 +130,26 @@ class _RatingScreenState extends State<RatingScreen> {
                     const SizedBox(height: 24),
                     PrimaryButton(
                       label: 'Kirim Ulasan',
-                      onPressed: () {
-                        store.submitRating(order.id);
+                      onPressed: () async {
+                        // Rata-rata bintang semua item (default 5).
+                        final nilai = order.items
+                            .map((i) => _ratings[i.menuId] ?? 5)
+                            .toList();
+                        final bintang = nilai.isEmpty
+                            ? 5
+                            : (nilai.reduce((a, b) => a + b) / nilai.length)
+                                  .round();
+                        final error = await store.submitRating(
+                          order.id,
+                          bintang: bintang,
+                          ulasan: _review.text,
+                        );
+                        if (!context.mounted) return;
+                        if (error != null) {
+                          ScaffoldMessenger.of(context)
+                              .showSnackBar(SnackBar(content: Text(error)));
+                          return;
+                        }
                         Navigator.of(context).pop();
                       },
                     ),
